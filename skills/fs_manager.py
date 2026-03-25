@@ -22,7 +22,12 @@ import re
 import time
 from pathlib import Path
 
+from core.security.doc_processor import get_doc_processor
+from core.security.dlp import get_dlp_engine
+
 logger = logging.getLogger(__name__)
+_doc_proc = get_doc_processor()
+_dlp = get_dlp_engine()
 
 # ── Diretórios do sistema bloqueados ─────────────────────────────────────────
 _BLOCKED_PATHS = {
@@ -220,6 +225,36 @@ def _do_list_dir(path: Path) -> str:
         return f"Erro ao listar: {e}"
 
 
+def _do_read_file(path: Path) -> str:
+    """
+    Securely read a file via the full ingestion pipeline:
+    validate → AV scan → strip metadata → safe parse → DLP sanitise.
+    Only PDF, TXT, MD, and CSV are permitted (max 5 MB).
+    """
+    result = _doc_proc.safe_parse(path)
+    if not result.ok:
+        return f"Leitura bloqueada por seguranca: `{result.rejected_reason}`"
+
+    text, findings = _dlp.sanitize_text(result.text)
+    dlp_note = ""
+    if findings:
+        labels = ", ".join(f.label for f in findings)
+        dlp_note = f"\n\n_[DLP: {sum(f.count for f in findings)} item(s) redacted — {labels}]_"
+
+    meta_note = ""
+    if result.metadata_stripped:
+        meta_note = f"\n_[Metadata stripped: {', '.join(result.metadata_stripped)}]_"
+
+    preview = text[:3000]
+    truncated = "\n\n…[truncado]" if len(text) > 3000 else ""
+    return (
+        f"**Arquivo lido com seguranca:** `{path.name}`\n"
+        f"{meta_note}"
+        f"\n```\n{preview}{truncated}\n```"
+        f"{dlp_note}"
+    )
+
+
 def _do_check_exists(path: Path) -> str:
     if not path.exists():
         return f"Nao encontrado: `{path}` nao existe neste computador."
@@ -265,6 +300,20 @@ def execute(user_input: str, confirm_key: str = _GLOBAL_KEY) -> str:
         r'\b(liste?|listar|mostrar?|show|exibir?|conte[uú]do|conteudo)\b',
         text_lower
     ))
+
+    # ── READ: seguro via SecureDocumentProcessor ─────────────────────────────
+    is_read = bool(re.search(
+        r'\b(ler?|leia|read|abrir?|open|mostrar?\s+conteudo|show\s+content|'
+        r'exibir?\s+arquivo|carregar?|load|parse)\b',
+        text_lower
+    ))
+    if is_read:
+        m = re.search(r'([A-Za-z]:[\\\/][^"\'<>|?*\n]+)', user_input)
+        if m:
+            p = _resolve_path(m.group(1))
+            if p:
+                return _do_read_file(p)
+        return "Nao consegui identificar o arquivo a ler. Informe o caminho completo."
 
     # ── CHECK: nao-destrutivo, execucao direta ────────────────────────────────
     if is_check:

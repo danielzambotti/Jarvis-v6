@@ -29,6 +29,8 @@ from core.metrics import (
     jarvis_response_time_seconds,
     start_metrics_server,
 )
+from core.security.doc_processor import get_doc_processor
+from core.security.dlp import get_dlp_engine as _get_dlp
 from skills.voice_handler import download_and_transcribe
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -39,8 +41,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ── Singletons ────────────────────────────────────────────────────────────────
-_slogger = StructuredLogger()
-_memory  = get_memory_manager()
+_slogger    = StructuredLogger()
+_memory     = get_memory_manager()
+_doc_proc   = get_doc_processor()
+_main_dlp   = _get_dlp()
 
 # ── Skill Dispatch Table (Sem UI_ACTION) ──────────────────────────────────────
 # Dentro do seu main.py
@@ -154,6 +158,60 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         return
     await _process_text(update, context, user_input)
 
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Telegram document upload handler.
+    All files pass through SecureDocumentProcessor before content touches the LLM.
+    Allowed: PDF, TXT, MD, CSV — max 5 MB.
+    """
+    if not update.message or not update.message.document: return
+    chat_id = update.effective_chat.id
+    if not is_authorized(chat_id): return
+
+    import tempfile
+    doc = update.message.document
+    caption = sanitize_input(update.message.caption or "")
+
+    await context.bot.send_chat_action(chat_id=chat_id, action="upload_document")
+
+    # Download to a temp file
+    try:
+        tg_file = await context.bot.get_file(doc.file_id)
+        suffix = Path(doc.file_name or "upload").suffix.lower() or ".bin"
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        await tg_file.download_to_drive(str(tmp_path))
+    except Exception as exc:
+        await update.message.reply_text(f"Erro ao baixar arquivo: {exc}")
+        return
+
+    # Full ingestion pipeline
+    result = _doc_proc.safe_parse(tmp_path)
+    try:
+        tmp_path.unlink(missing_ok=True)
+    except OSError:
+        pass
+
+    if not result.ok:
+        jarvis_security_blocks_total.labels(layer="doc_ingestion").inc()
+        await update.message.reply_text(
+            f"Arquivo bloqueado pelo pipeline de seguranca:\n`{result.rejected_reason}`"
+        )
+        return
+
+    # DLP-sanitise extracted text
+    clean_text, findings = _main_dlp.sanitize_text(result.text)
+    if findings:
+        logger.warning("[MAIN] DLP removed %d item(s) from document %s", len(findings), doc.file_name)
+
+    # Build user input for routing: inject document text as context
+    user_input = (
+        f"[DOCUMENT: {doc.file_name}]\n{clean_text[:4000]}"
+        + (f"\n\n[USER NOTE]: {caption}" if caption else "")
+    )
+    await _process_text(update, context, user_input)
+
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.voice: return
     chat_id = update.effective_chat.id
@@ -191,6 +249,7 @@ def main() -> None:
         tg_app.add_handler(CommandHandler("status", cmd_status))
         tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
         tg_app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+        tg_app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 
     async def _metrics_loop():
         import psutil

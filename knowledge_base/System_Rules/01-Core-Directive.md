@@ -42,5 +42,8 @@ All architectural decisions radiate from here.
 ### Observability
 - [[ADR-008-Observability-Stack]] — Prometheus + Grafana metrics, 4 core counters/histograms, auto-provisioned dashboard
 
+### Document Security
+- [[ADR-009-Document-Security]] — Secure file ingestion: MIME validation, AV scan hook, PDF metadata stripping, safe text extraction
+
 ### Active Context
 - [[Teste_NotebookLM]] — Phase 1 ignition test results
