@@ -47,6 +47,7 @@ All architectural decisions radiate from here.
 
 ### Secure SDLC
 - [[ADR-010-Secure-SDLC-Automation]] — Factory hard gate: Bandit SAST, Safety CVE scan, CycloneDX SBOM, pytest enforcement before every GitOps PR
+- [[ADR-011-Threat-Modeling-Engine]] — Stage 0 STRIDE analysis: threat context injected into Developer + Test Master before code generation
 
 ### Active Context
 - [[Teste_NotebookLM]] — Phase 1 ignition test results
