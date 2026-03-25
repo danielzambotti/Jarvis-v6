@@ -49,5 +49,8 @@ All architectural decisions radiate from here.
 - [[ADR-010-Secure-SDLC-Automation]] — Factory hard gate: Bandit SAST, Safety CVE scan, CycloneDX SBOM, pytest enforcement before every GitOps PR
 - [[ADR-011-Threat-Modeling-Engine]] — Stage 0 STRIDE analysis: threat context injected into Developer + Test Master before code generation
 
+### Resilience & Disaster Recovery
+- [[ADR-012-Backup-Recovery]] — Autonomous backup orchestrator: ZIP+validate+RPO, async resilience loop, atomic restore with rollback
+
 ### Active Context
 - [[Teste_NotebookLM]] — Phase 1 ignition test results

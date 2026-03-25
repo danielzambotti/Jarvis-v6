@@ -31,6 +31,7 @@ from core.metrics import (
 )
 from core.security.doc_processor import get_doc_processor
 from core.security.dlp import get_dlp_engine as _get_dlp
+from core.resilience.backup_orchestrator import get_backup_manager
 from skills.voice_handler import download_and_transcribe
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -45,6 +46,12 @@ _slogger    = StructuredLogger()
 _memory     = get_memory_manager()
 _doc_proc   = get_doc_processor()
 _main_dlp   = _get_dlp()
+_bk_manager = get_backup_manager()
+
+# Resilience config (overridable via environment)
+_BACKUP_INTERVAL_HOURS = int(os.environ.get("BACKUP_INTERVAL_HOURS", "12"))
+_RPO_HOURS             = int(os.environ.get("RPO_HOURS", "72"))
+_BACKUP_STARTUP_DELAY  = 300   # seconds before first backup (let system stabilise)
 
 # ── Skill Dispatch Table (Sem UI_ACTION) ──────────────────────────────────────
 # Dentro do seu main.py
@@ -270,6 +277,35 @@ def main() -> None:
             except Exception: pass
             await asyncio.sleep(5)
 
+    async def _resilience_loop():
+        """
+        Autonomous backup scheduler.
+        Runs create_backup() + enforce_rpo() every _BACKUP_INTERVAL_HOURS hours.
+        First cycle is delayed by _BACKUP_STARTUP_DELAY seconds to let the
+        application stabilise before stressing the filesystem at cold start.
+
+        Config (env vars):
+          BACKUP_INTERVAL_HOURS  — how often to back up (default: 12)
+          RPO_HOURS              — max backup retention window (default: 72)
+        """
+        logger.info(
+            "[RESILIENCE] Backup scheduler active — interval=%dh, RPO=%dh, first run in %ds",
+            _BACKUP_INTERVAL_HOURS, _RPO_HOURS, _BACKUP_STARTUP_DELAY,
+        )
+        await asyncio.sleep(_BACKUP_STARTUP_DELAY)
+        while True:
+            try:
+                result = await asyncio.to_thread(
+                    _bk_manager.create_backup, _RPO_HOURS
+                )
+                if result.ok:
+                    logger.info("[RESILIENCE] %s", result)
+                else:
+                    logger.error("[RESILIENCE] Backup failed: %s", result.error)
+            except Exception as exc:
+                logger.error("[RESILIENCE] Backup cycle exception: %s", exc)
+            await asyncio.sleep(_BACKUP_INTERVAL_HOURS * 3600)
+
     async def _run_all():
         uvi_config = uvicorn.Config(
             fastapi_app, host="0.0.0.0", port=8765, log_level="info", loop="asyncio"
@@ -291,7 +327,7 @@ def main() -> None:
         perceptor.start(event_loop=loop, bot=bot_instance, chat_id=str(ALLOWED_CHAT_ID) if ALLOWED_CHAT_ID else "API_MODE")
 
         try:
-            await asyncio.gather(uvi_server.serve(), _metrics_loop())
+            await asyncio.gather(uvi_server.serve(), _metrics_loop(), _resilience_loop())
         finally:
             logger.info("Jarvis desligando...")
             if telegram_enabled:
