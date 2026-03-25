@@ -192,6 +192,36 @@ services:
           cpus: '1.0'
           memory: 1G
 
+  # ── Jarvis Command Center UI (Flet Web) ────────────────────────────────
+  jarvis-ui:
+    image: python:3.11-slim
+    container_name: jarvis-ui
+    hostname: jarvis-ui
+    restart: unless-stopped
+    working_dir: /app
+    command: >
+      sh -c "pip install flet aiohttp requests --quiet &&
+             flet run ui/app.py --web --port 8501 --host 0.0.0.0"
+    ports:
+      - "8501:8501"
+    networks:
+      - jarvis-internal
+    volumes:
+      - .:/app:ro
+      - jarvis-workspace:/app/workspace:ro
+    environment:
+      - JARVIS_API_URL=http://jarvis-core:8765
+      - GRAFANA_URL=http://localhost:3000
+      - JARVIS_UI_TOKEN=${JARVIS_UI_TOKEN:-}
+      - WORKSPACE_PATH=/app/workspace
+    depends_on:
+      - jarvis-core
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+
   # ── Prometheus (Metrics Scraper) ──────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.51.0

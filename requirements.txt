@@ -25,3 +25,6 @@ safety
 cyclonedx-bom
 pytest
 prometheus-client
+# Phase 13: Command Center UI
+flet
+aiohttp
