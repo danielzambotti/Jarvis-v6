@@ -215,7 +215,8 @@ services:
       - JARVIS_UI_TOKEN=${JARVIS_UI_TOKEN:-}
       - WORKSPACE_PATH=/app/workspace
     depends_on:
-      - jarvis-core
+      jarvis-core:
+        condition: service_healthy
     deploy:
       resources:
         limits:

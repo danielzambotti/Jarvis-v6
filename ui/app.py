@@ -449,7 +449,7 @@ def build_security_view(page: ft.Page) -> ft.Control:
             side=ft.BorderSide(1, _ACCENT),
             shape=ft.RoundedRectangleBorder(radius=6),
         ),
-        url=f"{GRAFANA_URL}/d/jarvis-main-v1",
+        on_click=lambda e: e.page.launch_url(f"{GRAFANA_URL}/d/jarvis-main-v1"),
     )
 
     # Initial load
@@ -777,4 +777,4 @@ async def main(page: ft.Page) -> None:
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8501, host="0.0.0.0")
+    ft.run(target=main, port=8501, host="0.0.0.0")
