@@ -23,6 +23,12 @@ from skills.conversation_memory import save_message, rotate_history
 from skills.notion_logger import log_to_notion
 from skills.structured_logger import StructuredLogger
 from core.memory.manager import get_memory_manager
+from core.metrics import (
+    jarvis_requests_total,
+    jarvis_security_blocks_total,
+    jarvis_response_time_seconds,
+    start_metrics_server,
+)
 from skills.voice_handler import download_and_transcribe
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -94,24 +100,26 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user
             effective_input = user_input_with_ctx if skill_name == "CONVERSATION" else user_input
 
         try:
-            if skill_name == "FS_MANAGER":
-                result = fs_manager.execute(effective_input, confirm_key=confirm_key)
-            elif skill_name == "INSTALL":
-                await update.message.reply_text("Pesquisando como instalar... aguarde.")
-                await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-                search_query = plan.get("search_query", effective_input)
-                search_context = web_search.execute(search_query)
-                from skills import dev_architect
-                await update.message.reply_text("Instruções encontradas. Instalando...")
-                await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-                result = dev_architect.install_and_execute(effective_input, search_context)
-            elif skill_name == "GITHUB":
-                result = github_search.execute(effective_input)
-            elif skill_name == "CONVERSATION":
-                result = conversational.respond(effective_input, chat_id=confirm_key)
-            else:
-                skill_fn = SKILL_MAP.get(skill_name, conversational.respond)
-                result = skill_fn(effective_input)
+            with jarvis_response_time_seconds.labels(skill=skill_name).time():
+                if skill_name == "FS_MANAGER":
+                    result = fs_manager.execute(effective_input, confirm_key=confirm_key)
+                elif skill_name == "INSTALL":
+                    await update.message.reply_text("Pesquisando como instalar... aguarde.")
+                    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+                    search_query = plan.get("search_query", effective_input)
+                    search_context = web_search.execute(search_query)
+                    from skills import dev_architect
+                    await update.message.reply_text("Instruções encontradas. Instalando...")
+                    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+                    result = dev_architect.install_and_execute(effective_input, search_context)
+                elif skill_name == "GITHUB":
+                    result = github_search.execute(effective_input)
+                elif skill_name == "CONVERSATION":
+                    result = conversational.respond(effective_input, chat_id=confirm_key)
+                else:
+                    skill_fn = SKILL_MAP.get(skill_name, conversational.respond)
+                    result = skill_fn(effective_input)
+            jarvis_requests_total.labels(skill=skill_name).inc()
         except Exception as e:
             logger.error("[MAIN] skill=%s raised: %s", skill_name, e)
             result = f"Erro na skill '{skill_name}': {e}"
@@ -137,9 +145,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     if not user_input: return
     is_safe, reason = detect_prompt_injection(user_input)
     if not is_safe:
+        jarvis_security_blocks_total.labels(layer="prompt_injection").inc()
         await update.message.reply_text("Tentativa de manipulacao bloqueada.")
         return
     if not check_rate_limit(chat_id):
+        jarvis_security_blocks_total.labels(layer="rate_limit").inc()
         await update.message.reply_text("Muitas mensagens em pouco tempo. Aguarde.")
         return
     await _process_text(update, context, user_input)
@@ -164,6 +174,7 @@ def main() -> None:
     from web_ui.app import app as fastapi_app
 
     logger.info("Jarvis v6.0 iniciando (Modo Enterprise / API-First)...")
+    start_metrics_server(port=8000)
     telegram_enabled = bool(TELEGRAM_TOKEN and TELEGRAM_TOKEN.strip() != "DISABLED")
     tg_app = None
 

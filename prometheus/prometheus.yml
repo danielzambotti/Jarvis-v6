@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: "jarvis-v6"
+
+scrape_configs:
+  - job_name: "jarvis-core"
+    static_configs:
+      - targets: ["jarvis-core:8000"]
+    metrics_path: /metrics
+    scrape_interval: 15s

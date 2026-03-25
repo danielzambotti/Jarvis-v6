@@ -19,6 +19,7 @@ from core.security.sandbox import run_in_sandbox
 from core.security.dlp import get_dlp_engine
 from core.security.guardrails import get_input_validator, SecurityException
 from core.gitops.bridge import get_gitops_bridge
+from core.metrics import jarvis_security_blocks_total, jarvis_dlp_redactions_total
 
 logger = logging.getLogger(__name__)
 _dlp = get_dlp_engine()
@@ -90,6 +91,7 @@ def execute(user_input: str) -> str:
         _guardrail.check_prompt(user_input)
     except SecurityException as exc:
         logger.error("[FACTORY] Input blocked by guardrail: %s", exc.rule)
+        jarvis_security_blocks_total.labels(layer="guardrail").inc()
         return f"Input rejeitado pelo sistema de segurança (regra: `{exc.rule}`). Reformule a solicitação."
 
     # Estágio 1: O Arquiteto faz a planta
@@ -135,6 +137,8 @@ def execute(user_input: str) -> str:
             "[FACTORY] DLP removed %d item(s) from Guardian output: %s",
             len(out_findings), [f.label for f in out_findings],
         )
+    for finding in out_findings + sb_findings:
+        jarvis_dlp_redactions_total.labels(label=finding.label).inc(finding.count)
 
     # ── SALVAMENTO AUTOMÁTICO NO WORKSPACE ──
     workspace = Path("/app/workspace")

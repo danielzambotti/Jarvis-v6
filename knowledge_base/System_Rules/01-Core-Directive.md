@@ -39,5 +39,8 @@ All architectural decisions radiate from here.
 ### GitOps & Deployment
 - [[ADR-007-Autonomous-GitOps]] — GitOps bridge, CI pipeline, autonomous PR lifecycle
 
+### Observability
+- [[ADR-008-Observability-Stack]] — Prometheus + Grafana metrics, 4 core counters/histograms, auto-provisioned dashboard
+
 ### Active Context
 - [[Teste_NotebookLM]] — Phase 1 ignition test results
