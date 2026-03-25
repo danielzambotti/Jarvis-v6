@@ -201,7 +201,7 @@ services:
     working_dir: /app
     command: >
       sh -c "pip install flet aiohttp requests --quiet &&
-             flet run ui/app.py --web --port 8501 --host 0.0.0.0"
+             python ui/app.py"
     ports:
       - "8501:8501"
     networks:

@@ -777,8 +777,4 @@ async def main(page: ft.Page) -> None:
 # ── Entry point ────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    ft.app(
-        target=main,
-        port=8501,
-        host="0.0.0.0",
-    )
+    ft.app(target=main, view=ft.AppView.WEB_BROWSER, port=8501, host="0.0.0.0")
