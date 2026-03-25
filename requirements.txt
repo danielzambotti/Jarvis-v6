@@ -16,3 +16,12 @@ watchdog
 pyautogui
 pygetwindow
 pillow
+# Phase 9: Document security
+pdfplumber
+pypdf
+# Phase 10: Secure SDLC
+bandit
+safety
+cyclonedx-bom
+pytest
+prometheus-client

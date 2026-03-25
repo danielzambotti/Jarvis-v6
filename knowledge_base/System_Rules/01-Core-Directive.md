@@ -45,5 +45,8 @@ All architectural decisions radiate from here.
 ### Document Security
 - [[ADR-009-Document-Security]] — Secure file ingestion: MIME validation, AV scan hook, PDF metadata stripping, safe text extraction
 
+### Secure SDLC
+- [[ADR-010-Secure-SDLC-Automation]] — Factory hard gate: Bandit SAST, Safety CVE scan, CycloneDX SBOM, pytest enforcement before every GitOps PR
+
 ### Active Context
 - [[Teste_NotebookLM]] — Phase 1 ignition test results
