@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "test-master",
+  "owner": "jeffallan",
+  "repo": "claude-skills",
+  "path": "skills/test-master",
+  "branch": "main",
+  "sha": "c2b99b99b778e40520c8d723caa081dfe68a67d6",
+  "source": "manual"
+}

@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "code-reviewer",
+  "owner": "jeffallan",
+  "repo": "claude-skills",
+  "path": "skills/code-reviewer",
+  "branch": "main",
+  "sha": "23f19891806919dc5d5e0a3e124e47bfeda08f1d",
+  "source": "manual"
+}

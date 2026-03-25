@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "architecture-designer",
+  "owner": "jeffallan",
+  "repo": "claude-skills",
+  "path": "skills/architecture-designer",
+  "branch": "main",
+  "sha": "064fc162dae9811417f1270db4cd6b7245953d3f",
+  "source": "manual"
+}

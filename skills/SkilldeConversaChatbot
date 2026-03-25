@@ -1,0 +1,18 @@
+import requests
+from config import OLLAMA_URL, OLLAMA_MODEL
+
+def execute(prompt: str) -> str:
+    """Skill que responde perguntas normalmente, como o ChatGPT."""
+    system_prompt = "Você é o Jarvis, um assistente de IA extremamente inteligente e educado. Responda à pergunta do usuário de forma clara e direta em português."
+    
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": f"{system_prompt}\n\nUsuário: {prompt}",
+        "stream": False,
+        "options": {"temperature": 0.6} # Um pouco mais alto para ele ser criativo na resposta
+    }
+    try:
+        response = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        return response.json().get("response", "").strip() if response.status_code == 200 else "Erro na IA (Chat)."
+    except Exception as e:
+        return f"Erro de conexão com Ollama: {e}"

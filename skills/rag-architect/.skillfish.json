@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "rag-architect",
+  "owner": "jeffallan",
+  "repo": "claude-skills",
+  "path": "skills/rag-architect",
+  "branch": "main",
+  "sha": "17e59b33548ee756dcd826ae1db4a156863df28f",
+  "source": "manual"
+}

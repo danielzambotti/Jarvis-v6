@@ -1,0 +1,12 @@
+venv/
+.env
+ollama_data/
+backups/
+logs/
+memory/
+*.jsonl
+*.pyc
+__pycache__/
+.claude/
+.notebooklm/
+storage_state.json

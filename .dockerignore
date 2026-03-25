@@ -1,0 +1,58 @@
+# ========================================================================
+# Jarvis v6.0 — Docker Ignore
+# Excludes unnecessary files from Docker build context
+# ========================================================================
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+*.egg-info/
+
+# Development files
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+_test_*.py
+_smoke_*.py
+_check_*.py
+
+# Logs and data
+logs/
+*.log
+memory/
+backups/
+workspace/
+ollama_data/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# Documentation
+*.md
+!README.md
+CLAUDE.md
+
+# Temporary files
+err.txt
+*.tmp
+*.bak
+*.txt
+!requirements.txt
+!pip_list.txt

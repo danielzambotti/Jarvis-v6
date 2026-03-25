@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "feature-forge",
+  "owner": "jeffallan",
+  "repo": "claude-skills",
+  "path": "skills/feature-forge",
+  "branch": "main",
+  "sha": "e7708e698a8acd33a18ffa743ea56a089ef34377",
+  "source": "manual"
+}

@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "devops-engineer",
+  "owner": "jeffallan",
+  "repo": "claude-skills",
+  "path": "skills/devops-engineer",
+  "branch": "main",
+  "sha": "658de93743b84824e3c717f4961fdab2a2f400a8",
+  "source": "manual"
+}

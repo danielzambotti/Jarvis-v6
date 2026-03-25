@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "secure-code-guardian",
+  "owner": "jeffallan",
+  "repo": "claude-skills",
+  "path": "skills/secure-code-guardian",
+  "branch": "main",
+  "sha": "c2b9e73c6610992e4da793fdb2393bf7f2a3586e",
+  "source": "manual"
+}

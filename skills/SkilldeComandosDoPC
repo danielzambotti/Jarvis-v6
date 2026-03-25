@@ -1,0 +1,21 @@
+import requests
+from config import OLLAMA_URL, OLLAMA_MODEL
+
+def execute(prompt: str) -> str:
+    """Skill que transforma o pedido em um comando do Windows."""
+    system_prompt = """Você é o Jarvis, um orquestrador de PC. 
+O usuário vai pedir algo. Responda APENAS com o comando de terminal Windows (PowerShell/CMD) necessário. 
+NÃO dê explicações. NÃO use markdown. APENAS o comando exato.
+Exemplo: notepad.exe"""
+    
+    payload = {
+        "model": OLLAMA_MODEL,
+        "prompt": f"{system_prompt}\n\nPedido: {prompt}",
+        "stream": False,
+        "options": {"temperature": 0.1} # Temperatura baixa para não alucinar comandos
+    }
+    try:
+        response = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        return response.json().get("response", "").strip() if response.status_code == 200 else "Erro na IA (OS)."
+    except Exception as e:
+        return f"Erro de conexão com Ollama: {e}"

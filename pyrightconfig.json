@@ -1,0 +1,10 @@
+{
+    "executionEnvironments": [
+        {
+            "root": "c:/Jarvis",
+            "extraPaths": [
+                "c:/Jarvis"
+            ]
+        }
+    ]
+}
