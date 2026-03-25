@@ -103,7 +103,7 @@ def _card(content: ft.Control, padding: int = 16) -> ft.Container:
     return ft.Container(
         content=content,
         bgcolor=_BG_CARD,
-        border=ft.border.all(1, _BORDER),
+        border=ft.Border.all(1, _BORDER),
         border_radius=8,
         padding=padding,
     )
@@ -113,9 +113,9 @@ def _badge(label: str, color: str) -> ft.Container:
     return ft.Container(
         content=ft.Text(label, size=11, weight=ft.FontWeight.W_600, color=color),
         bgcolor=f"{color}22",
-        border=ft.border.all(1, f"{color}66"),
+        border=ft.Border.all(1, f"{color}66"),
         border_radius=4,
-        padding=ft.padding.symmetric(horizontal=8, vertical=2),
+        padding=ft.Padding.symmetric(horizontal=8, vertical=2),
     )
 
 
@@ -179,14 +179,14 @@ def build_chat_view(page: ft.Page) -> ft.Control:
                 ),
             ], spacing=4, tight=True),
             bgcolor=_BG_INPUT if is_user else _BG_CARD,
-            border=ft.border.all(1, _BORDER),
-            border_radius=ft.border_radius.only(
+            border=ft.Border.all(1, _BORDER),
+            border_radius=ft.BorderRadius.only(
                 top_left=8, top_right=8,
                 bottom_right=0 if is_user else 8,
                 bottom_left=8 if is_user else 0,
             ),
             padding=12,
-            margin=ft.margin.only(
+            margin=ft.Margin.only(
                 left=80 if is_user else 0,
                 right=0 if is_user else 80,
             ),
@@ -208,7 +208,7 @@ def build_chat_view(page: ft.Page) -> ft.Control:
                 ft.ProgressRing(width=14, height=14, stroke_width=2, color=_PURPLE),
                 ft.Text("Jarvis is thinking...", size=12, color=_DIM, italic=True),
             ], spacing=8),
-            margin=ft.margin.only(top=4),
+            margin=ft.Margin.only(top=4),
         )
         messages.controls.append(thinking)
         page.update()
@@ -235,7 +235,7 @@ def build_chat_view(page: ft.Page) -> ft.Control:
             content=messages,
             expand=True,
             bgcolor=_BG,
-            border=ft.border.all(1, _BORDER),
+            border=ft.Border.all(1, _BORDER),
             border_radius=8,
             padding=12,
         ),
@@ -306,7 +306,7 @@ def build_workspace_view(page: ft.Page) -> ft.Control:
                             size=11, color=_DIM,
                         ),
                     ], spacing=6),
-                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                    padding=ft.Padding.symmetric(horizontal=8, vertical=4),
                     border_radius=4,
                     ink=True,
                     on_click=_make_click(),
@@ -443,9 +443,9 @@ def build_security_view(page: ft.Page) -> ft.Control:
     grafana_btn = ft.ElevatedButton(
         text="Open Grafana Dashboard",
         icon=ft.Icons.OPEN_IN_NEW_ROUNDED,
-        color=_ACCENT,
-        bgcolor=f"{_ACCENT}22",
         style=ft.ButtonStyle(
+            color=_ACCENT,
+            bgcolor=f"{_ACCENT}22",
             side=ft.BorderSide(1, _ACCENT),
             shape=ft.RoundedRectangleBorder(radius=6),
         ),
@@ -537,9 +537,11 @@ def build_gitops_view(page: ft.Page) -> ft.Control:
     run_btn = ft.ElevatedButton(
         text="Run Software Factory",
         icon=ft.Icons.PRECISION_MANUFACTURING_ROUNDED,
-        color=_BG,
-        bgcolor=_ACCENT,
-        style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=6)),
+        style=ft.ButtonStyle(
+            color=_BG,
+            bgcolor=_ACCENT,
+            shape=ft.RoundedRectangleBorder(radius=6),
+        ),
         on_click=lambda e: asyncio.create_task(_run_factory(e)),
     )
     status_badge = ft.Row([])
@@ -626,7 +628,7 @@ def build_gitops_view(page: ft.Page) -> ft.Control:
                                                     weight=ft.FontWeight.W_700),
                                     bgcolor=color,
                                     border_radius=3,
-                                    padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                                    padding=ft.Padding.symmetric(horizontal=6, vertical=2),
                                     width=68,
                                 ),
                                 ft.Column([
@@ -635,7 +637,7 @@ def build_gitops_view(page: ft.Page) -> ft.Control:
                                     ft.Text(desc, size=11, color=_DIM),
                                 ], spacing=1, tight=True, expand=True),
                             ], spacing=10),
-                            margin=ft.margin.only(bottom=6),
+                            margin=ft.Margin.only(bottom=6),
                         )
                         for stage, name, desc, color in pipeline_steps
                     ],
@@ -702,8 +704,8 @@ async def main(page: ft.Page) -> None:
             ], spacing=4),
         ]),
         bgcolor=_BG_CARD,
-        border=ft.border.only(bottom=ft.BorderSide(1, _BORDER)),
-        padding=ft.padding.symmetric(horizontal=20, vertical=12),
+        border=ft.Border.only(bottom=ft.BorderSide(1, _BORDER)),
+        padding=ft.Padding.symmetric(horizontal=20, vertical=12),
         height=52,
     )
 
@@ -740,7 +742,7 @@ async def main(page: ft.Page) -> None:
                 icon=ft.Text(icon, size=18),
                 selected_icon=ft.Text(icon, size=18),
                 label=label,
-                padding=ft.padding.symmetric(vertical=4),
+                padding=ft.Padding.symmetric(vertical=4),
             )
             for icon, label in NAV_ITEMS
         ],
@@ -752,7 +754,7 @@ async def main(page: ft.Page) -> None:
         ft.Container(
             content=nav_rail,
             bgcolor=_BG_CARD,
-            border=ft.border.only(right=ft.BorderSide(1, _BORDER)),
+            border=ft.Border.only(right=ft.BorderSide(1, _BORDER)),
         ),
         ft.Container(
             content=content_area,

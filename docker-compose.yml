@@ -200,7 +200,7 @@ services:
     restart: unless-stopped
     working_dir: /app
     command: >
-      sh -c "pip install flet aiohttp requests --quiet &&
+      sh -c "pip install flet==0.82.2 aiohttp requests --quiet &&
              python ui/app.py"
     ports:
       - "8501:8501"
