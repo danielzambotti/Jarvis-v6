@@ -28,7 +28,7 @@ def _is_creator_intent(text: str) -> bool:
 
 VALID_SKILLS = {"OS_COMMAND", "WEB_SEARCH", "CREATOR", "FS_MANAGER", "BACKUP",
                 "INSPECTOR", "INSTALL", "GITHUB", "UI_ACTION", "REFACTOR",
-                "JAVA_GITOPS", "FACTORY", "SYSTEM_STATUS", "CONVERSATION"}
+                "JAVA_GITOPS", "FACTORY", "SYSTEM_STATUS", "JARVIS_HEALTH", "CONVERSATION"}
 
 _UI_KEYWORDS = re.compile(
     r'\b(click|clique?|screenshot|capturar\s+tela|digitar?|type\s+text|'
@@ -95,6 +95,16 @@ _FACTORY_KEYWORDS = re.compile(
 def _is_factory_intent(text: str) -> bool:
     return bool(_FACTORY_KEYWORDS.search(text))
 
+_JARVIS_HEALTH_KEYWORDS = re.compile(
+    r'\b(jarvis\s*health|health\s*check|saúde\s*do\s*jarvis|diagnóstico\s*do\s*jarvis|'
+    r'jarvis\s*status|jarvis\s*ok|is\s*jarvis\s*(ok|running|up)|'
+    r'infrastructure\s*health|infra\s*status|check\s*services|'
+    r'redis\s*(ok|status|up)|postgres\s*(ok|status|up)|ollama\s*(ok|status|up))\b',
+    re.IGNORECASE,
+)
+def _is_jarvis_health_intent(text: str) -> bool:
+    return bool(_JARVIS_HEALTH_KEYWORDS.search(text))
+
 _SYSTEM_STATUS_KEYWORDS = re.compile(
     r'\b(cpu|ram|mem[oó]ria|memory|disk|disco|diagnostic[o]?|diagnóstico|'
     r'system\s*status|status\s*do\s*sistema|saúde\s*do\s*sistema|system\s*health|'
@@ -137,6 +147,7 @@ RULES:
 2. When in doubt → CONVERSATION."""
 
 def route(user_input: str) -> str:
+    if _is_jarvis_health_intent(user_input): return "JARVIS_HEALTH"
     if _is_system_status_intent(user_input): return "SYSTEM_STATUS"
     if _is_factory_intent(user_input): return "FACTORY"
     if _is_ui_intent(user_input): return "UI_ACTION"

@@ -235,6 +235,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 def _sre_startup_checks() -> None:
     """Proactive sanity checks that run before the event loop starts."""
+    import shutil
     import requests as _req
     from config import OLLAMA_URL
     from security import is_safe_path
@@ -260,6 +261,14 @@ def _sre_startup_checks() -> None:
             )
     except Exception as e:
         logger.critical("[SRE] CRITICAL — Path resolution check threw: %s", e)
+
+    # ── Check 3: CLI tool availability ───────────────────────────────────
+    for tool, skills in [("git", "REFACTOR/JAVA_GITOPS"), ("docker", "FACTORY/SYSTEM_STATUS")]:
+        path = shutil.which(tool)
+        if path:
+            logger.info("[SRE] %s found at %s — %s skills operational.", tool, path, skills)
+        else:
+            logger.warning("[SRE] WARNING — '%s' not found in PATH. %s skills will fail.", tool, skills)
 
 
 def main() -> None:

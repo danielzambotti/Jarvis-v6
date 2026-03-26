@@ -24,7 +24,7 @@ from router import route
 from skills import (
     conversational, os_controller, web_search, creator, fs_manager,
     backup_manager, inspector, github_search, refactor, java_gitops,
-    system_status
+    system_status, jarvis_health
 )
 
 logger = logging.getLogger(__name__)
@@ -139,6 +139,7 @@ async def execute_command(
                 "INSPECTOR": inspector.execute, "GITHUB": github_search.execute,
                 "REFACTOR": refactor.execute, "JAVA_GITOPS": java_gitops.execute,
                 "SYSTEM_STATUS": system_status.execute,
+                "JARVIS_HEALTH": jarvis_health.execute,
             }
             fn = skills_map.get(skill_name, conversational.respond)
             res = fn(msg)
