@@ -307,6 +307,7 @@ def main() -> None:
             await asyncio.sleep(_BACKUP_INTERVAL_HOURS * 3600)
 
     async def _run_all():
+        nonlocal telegram_enabled
         uvi_config = uvicorn.Config(
             fastapi_app, host="0.0.0.0", port=8765, log_level="info", loop="asyncio"
         )
