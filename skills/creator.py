@@ -30,14 +30,11 @@ MAX_FILE_SIZE_CHARS = 20_000  # ~20KB hard cap to prevent disk exhaustion
 def _get_workspace() -> Path:
     """
     Returns the workspace directory path, creating it if needed.
-    Always resolved relative to THIS file's location — never uses cwd.
-
-    C:\\Jarvis\\skills\\creator.py
-      → parent: C:\\Jarvis\\skills\\
-      → parent: C:\\Jarvis\\
-      → / "workspace": C:\\Jarvis\\workspace\\
+    Uses WORKSPACE_PATH env var (set by Docker Compose) with /app/workspace fallback.
+    Matches the resolution used by security.is_safe_path() to prevent false positives.
     """
-    ws = Path(__file__).resolve().parent.parent / "workspace"
+    import os
+    ws = Path(os.environ.get("WORKSPACE_PATH", "/app/workspace")).resolve()
     ws.mkdir(parents=True, exist_ok=True)
     return ws
 

@@ -74,7 +74,7 @@ def check_rate_limit(chat_id: int) -> bool:
 
 
 # ── Layer 6: Path Traversal Guard ────────────────────────────────────────────
-_WORKSPACE = (Path(__file__).resolve().parent / "workspace")
+_WORKSPACE = Path(os.environ.get("WORKSPACE_PATH", "/app/workspace")).resolve()
 
 def is_safe_path(user_path: str) -> bool:
     """
