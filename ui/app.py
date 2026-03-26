@@ -41,26 +41,25 @@ JARVIS_TOKEN = os.environ.get("JARVIS_UI_TOKEN", "")
 GRAFANA_URL  = os.environ.get("GRAFANA_URL",     "http://localhost:3000")
 WORKSPACE    = Path(os.environ.get("WORKSPACE_PATH", "/app/workspace"))
 
-# If no explicit token, mint one from the shared JWT_SECRET_KEY (HS256, matches core IAM)
-if JARVIS_TOKEN:
-    print(f"[AUTH] Using JARVIS_UI_TOKEN from env (len={len(JARVIS_TOKEN)}, prefix={JARVIS_TOKEN[:20]}...)", flush=True)
+# Always prefer minting a fresh JWT from JWT_SECRET_KEY — it includes all required claims
+# (sub, role, iat, exp). JARVIS_UI_TOKEN from .env may be missing `iat` and will cause 401.
+_jwt_secret = os.environ.get("JWT_SECRET_KEY", "")
+if _jwt_secret:
+    try:
+        import jwt as _pyjwt
+        _now = int(time.time())
+        JARVIS_TOKEN = _pyjwt.encode(
+            {"sub": "jarvis-ui", "role": "admin", "iat": _now, "exp": _now + 86400},
+            _jwt_secret,
+            algorithm="HS256",
+        )
+        print(f"[AUTH] Minted JWT from JWT_SECRET_KEY (prefix={JARVIS_TOKEN[:20]}...)", flush=True)
+    except Exception as e:
+        print(f"[AUTH] ERROR minting JWT: {e}", flush=True)
+elif JARVIS_TOKEN:
+    print(f"[AUTH] WARNING: Using JARVIS_UI_TOKEN fallback — may be missing iat claim (prefix={JARVIS_TOKEN[:20]}...)", flush=True)
 else:
-    _jwt_secret = os.environ.get("JWT_SECRET_KEY", "")
-    print(f"[AUTH] JARVIS_UI_TOKEN not set. JWT_SECRET_KEY present={bool(_jwt_secret)}, len={len(_jwt_secret)}", flush=True)
-    if _jwt_secret:
-        try:
-            import jwt as _pyjwt
-            _now = int(time.time())
-            JARVIS_TOKEN = _pyjwt.encode(
-                {"sub": "jarvis-ui", "role": "admin", "iat": _now, "exp": _now + 86400},
-                _jwt_secret,
-                algorithm="HS256",
-            )
-            print(f"[AUTH] Minted JWT from JWT_SECRET_KEY (prefix={JARVIS_TOKEN[:20]}...)", flush=True)
-        except Exception as e:
-            print(f"[AUTH] ERROR minting JWT: {e}", flush=True)
-    else:
-        print("[AUTH] WARNING: No token available — requests will be rejected with 401", flush=True)
+    print("[AUTH] WARNING: No token available — requests will be rejected with 401", flush=True)
 
 # ── Design tokens ──────────────────────────────────────────────────────────────
 
