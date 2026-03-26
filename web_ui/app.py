@@ -143,6 +143,7 @@ async def execute_command(
             fn = skills_map.get(skill_name, conversational.respond)
             res = fn(msg)
     except Exception as e:
-        res = f"Erro na API: {e}"
+        logger.exception("[API] Unhandled exception in skill '%s' for user '%s'", skill_name, uid)
+        res = f"❌ Skill Execution Failed: {type(e).__name__} — {e}"
     
     return {"intent": skill_name, "response": res}

@@ -233,11 +233,41 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text(f"🎤 _Entendi:_ {user_input}", parse_mode="Markdown")
     await _process_text(update, context, user_input)
 
+def _sre_startup_checks() -> None:
+    """Proactive sanity checks that run before the event loop starts."""
+    import requests as _req
+    from config import OLLAMA_URL
+    from security import is_safe_path
+
+    # ── Check 1: Ollama reachability ─────────────────────────────────────
+    try:
+        r = _req.get(OLLAMA_URL.replace("/api/generate", ""), timeout=5)
+        logger.info("[SRE] Ollama connection verified at %s (HTTP %s)", OLLAMA_URL, r.status_code)
+    except Exception as e:
+        logger.critical("[SRE] CRITICAL — Ollama unreachable at %s: %s", OLLAMA_URL, e)
+        logger.critical("[SRE] All LLM-dependent skills will fail until Ollama is running.")
+
+    # ── Check 2: Workspace path resolution ───────────────────────────────
+    workspace = os.environ.get("WORKSPACE_PATH", "/app/workspace")
+    test_path = str(Path(workspace) / ".sre_test")
+    try:
+        if is_safe_path(test_path):
+            logger.info("[SRE] Workspace path resolution OK: %s", workspace)
+        else:
+            logger.critical(
+                "[SRE] CRITICAL — is_safe_path('%s') returned False. "
+                "File-based skills (CREATOR, REFACTOR, FS_MANAGER) will be blocked.", test_path
+            )
+    except Exception as e:
+        logger.critical("[SRE] CRITICAL — Path resolution check threw: %s", e)
+
+
 def main() -> None:
     import uvicorn
     sys.path.insert(0, str(Path(__file__).parent))
     from web_ui.app import app as fastapi_app
 
+    _sre_startup_checks()
     logger.info("Jarvis v6.0 iniciando (Modo Enterprise / API-First)...")
     start_metrics_server(port=8000)
     telegram_enabled = bool(TELEGRAM_TOKEN and TELEGRAM_TOKEN.strip() != "DISABLED")
