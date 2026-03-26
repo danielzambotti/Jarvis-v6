@@ -154,8 +154,8 @@ def _generate_content(user_input: str, filename: str) -> str:
 
         return content.strip()
 
-    except requests.exceptions.ConnectionError:
-        logger.error("[CREATOR] Ollama not reachable at %s", OLLAMA_URL)
+    except requests.exceptions.ConnectionError as e:
+        logger.error("[CREATOR] Ollama not reachable at %s — %s", OLLAMA_URL, e)
         return ""
     except requests.exceptions.Timeout:
         logger.error("[CREATOR] Ollama request timed out after 120s")
