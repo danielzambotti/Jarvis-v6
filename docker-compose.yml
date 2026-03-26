@@ -60,6 +60,8 @@ services:
     container_name: jarvis-core
     hostname: jarvis-core
     restart: unless-stopped
+    env_file:
+      - .env
     ports:
       - "8765:8765"
       - "8000:8000"   # Prometheus metrics endpoint
@@ -198,6 +200,8 @@ services:
     container_name: jarvis-ui
     hostname: jarvis-ui
     restart: unless-stopped
+    env_file:
+      - .env
     working_dir: /app
     command: >
       sh -c "pip install flet==0.82.2 aiohttp requests --quiet &&
