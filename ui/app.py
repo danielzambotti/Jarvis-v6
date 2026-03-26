@@ -42,8 +42,11 @@ GRAFANA_URL  = os.environ.get("GRAFANA_URL",     "http://localhost:3000")
 WORKSPACE    = Path(os.environ.get("WORKSPACE_PATH", "/app/workspace"))
 
 # If no explicit token, mint one from the shared JWT_SECRET_KEY (HS256, matches core IAM)
-if not JARVIS_TOKEN:
+if JARVIS_TOKEN:
+    print(f"[AUTH] Using JARVIS_UI_TOKEN from env (len={len(JARVIS_TOKEN)}, prefix={JARVIS_TOKEN[:20]}...)", flush=True)
+else:
     _jwt_secret = os.environ.get("JWT_SECRET_KEY", "")
+    print(f"[AUTH] JARVIS_UI_TOKEN not set. JWT_SECRET_KEY present={bool(_jwt_secret)}, len={len(_jwt_secret)}", flush=True)
     if _jwt_secret:
         try:
             import jwt as _pyjwt
@@ -53,8 +56,11 @@ if not JARVIS_TOKEN:
                 _jwt_secret,
                 algorithm="HS256",
             )
-        except Exception:
-            pass
+            print(f"[AUTH] Minted JWT from JWT_SECRET_KEY (prefix={JARVIS_TOKEN[:20]}...)", flush=True)
+        except Exception as e:
+            print(f"[AUTH] ERROR minting JWT: {e}", flush=True)
+    else:
+        print("[AUTH] WARNING: No token available — requests will be rejected with 401", flush=True)
 
 # ── Design tokens ──────────────────────────────────────────────────────────────
 
@@ -97,6 +103,8 @@ async def _post(path: str, payload: dict) -> dict:
     headers = {"Content-Type": "application/json"}
     if JARVIS_TOKEN:
         headers["Authorization"] = f"Bearer {JARVIS_TOKEN}"
+    auth_debug = headers.get("Authorization", "MISSING")
+    print(f"[POST] {url} | Authorization: {auth_debug[:40]}...", flush=True)
     try:
         if _AIOHTTP_OK:
             async with aiohttp.ClientSession() as s:
