@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -39,6 +40,21 @@ JARVIS_API   = os.environ.get("JARVIS_API_URL",  "http://localhost:8765")
 JARVIS_TOKEN = os.environ.get("JARVIS_UI_TOKEN", "")
 GRAFANA_URL  = os.environ.get("GRAFANA_URL",     "http://localhost:3000")
 WORKSPACE    = Path(os.environ.get("WORKSPACE_PATH", "/app/workspace"))
+
+# If no explicit token, mint one from the shared JWT_SECRET_KEY (HS256, matches core IAM)
+if not JARVIS_TOKEN:
+    _jwt_secret = os.environ.get("JWT_SECRET_KEY", "")
+    if _jwt_secret:
+        try:
+            import jwt as _pyjwt
+            _now = int(time.time())
+            JARVIS_TOKEN = _pyjwt.encode(
+                {"sub": "jarvis-ui", "role": "admin", "iat": _now, "exp": _now + 86400},
+                _jwt_secret,
+                algorithm="HS256",
+            )
+        except Exception:
+            pass
 
 # ── Design tokens ──────────────────────────────────────────────────────────────
 
