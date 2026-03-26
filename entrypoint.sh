@@ -117,6 +117,9 @@ log_info "Directory structure initialized ✓"
 # ── Phase 4: Virtual Display (Xvfb) for UI Automation ──────────────────
 log_info "Starting virtual display (Xvfb)..."
 
+# Clean up stale lock files from previous runs
+rm -f /tmp/.X99-lock /tmp/.X11-unix/X99
+
 # Start Xvfb in the background
 Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
 XVFB_PID=$!
