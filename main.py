@@ -313,10 +313,14 @@ def main() -> None:
         uvi_server = uvicorn.Server(uvi_config)
 
         if telegram_enabled:
-            await tg_app.initialize()
-            await tg_app.start()
-            await tg_app.updater.start_polling(drop_pending_updates=True)
-            logger.info("[MAIN] Telegram iniciado.")
+            try:
+                await tg_app.initialize()
+                await tg_app.start()
+                await tg_app.updater.start_polling(drop_pending_updates=True)
+                logger.info("[MAIN] Telegram iniciado.")
+            except Exception as e:
+                logger.warning(f"Telegram bot disabled: {e}")
+                telegram_enabled = False
         else:
             logger.info("[MAIN] Telegram DESABILITADO. Rodando como API Local.")
 
@@ -330,7 +334,7 @@ def main() -> None:
             await asyncio.gather(uvi_server.serve(), _metrics_loop(), _resilience_loop())
         finally:
             logger.info("Jarvis desligando...")
-            if telegram_enabled:
+            if telegram_enabled and tg_app is not None:
                 await tg_app.updater.stop()
                 await tg_app.stop()
                 await tg_app.shutdown()

@@ -28,3 +28,4 @@ prometheus-client
 # Phase 13: Command Center UI
 flet
 aiohttp
+PyJWT>=2.8.0
