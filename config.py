@@ -25,7 +25,7 @@ ALLOWED_CHAT_ID: int = _vault.get_int("ALLOWED_CHAT_ID")
 # ── Ollama (Local AI Engine) ───────────────────────────────────────────────────
 # OLLAMA_HOST is the base URL injected by Docker Compose (e.g. http://ollama:11434).
 # Individual skills import OLLAMA_URL / OLLAMA_CHAT_URL from this module.
-_OLLAMA_HOST: str     = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+_OLLAMA_HOST: str     = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
 OLLAMA_URL: str       = _vault.get_secret("OLLAMA_URL",      default=f"{_OLLAMA_HOST}/api/generate")
 OLLAMA_CHAT_URL: str  = _vault.get_secret("OLLAMA_CHAT_URL", default=f"{_OLLAMA_HOST}/api/chat")
 OLLAMA_MODEL: str     = _vault.get_secret("OLLAMA_MODEL",    default="llama3")
