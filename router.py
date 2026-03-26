@@ -28,7 +28,7 @@ def _is_creator_intent(text: str) -> bool:
 
 VALID_SKILLS = {"OS_COMMAND", "WEB_SEARCH", "CREATOR", "FS_MANAGER", "BACKUP",
                 "INSPECTOR", "INSTALL", "GITHUB", "UI_ACTION", "REFACTOR",
-                "JAVA_GITOPS", "FACTORY", "CONVERSATION"}
+                "JAVA_GITOPS", "FACTORY", "SYSTEM_STATUS", "CONVERSATION"}
 
 _UI_KEYWORDS = re.compile(
     r'\b(click|clique?|screenshot|capturar\s+tela|digitar?|type\s+text|'
@@ -95,6 +95,18 @@ _FACTORY_KEYWORDS = re.compile(
 def _is_factory_intent(text: str) -> bool:
     return bool(_FACTORY_KEYWORDS.search(text))
 
+_SYSTEM_STATUS_KEYWORDS = re.compile(
+    r'\b(cpu|ram|mem[oó]ria|memory|disk|disco|diagnostic[o]?|diagnóstico|'
+    r'system\s*status|status\s*do\s*sistema|saúde\s*do\s*sistema|system\s*health|'
+    r'docker\s*status|containers?\s*status|how\s*is\s*(my\s*)?system|'
+    r'uso\s*do\s*sistema|recursos\s*do\s*sistema|system\s*resources|'
+    r'monitor\s*do\s*sistema|what.{0,20}running|o\s*que\s*est[aá]\s*rodando|'
+    r'processos|processes|desempenho|performance)\b',
+    re.IGNORECASE,
+)
+def _is_system_status_intent(text: str) -> bool:
+    return bool(_SYSTEM_STATUS_KEYWORDS.search(text))
+
 _ROUTER_SYSTEM_PROMPT = """You are a strict intent classifier. Output a single JSON object: {"skill": "<SKILL>"}.
 
 SKILLS:
@@ -125,6 +137,7 @@ RULES:
 2. When in doubt → CONVERSATION."""
 
 def route(user_input: str) -> str:
+    if _is_system_status_intent(user_input): return "SYSTEM_STATUS"
     if _is_factory_intent(user_input): return "FACTORY"
     if _is_ui_intent(user_input): return "UI_ACTION"
     if _is_java_gitops_intent(user_input): return "JAVA_GITOPS"
