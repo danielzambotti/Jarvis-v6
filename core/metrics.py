@@ -97,6 +97,21 @@ jarvis_chromadb_errors_total = Counter(
     ["operation"],
 )
 
+# ── Router Metrics ─────────────────────────────────────────────────────────────
+
+jarvis_router_latency_seconds = Histogram(
+    "jarvis_router_latency_seconds",
+    "LLM classification latency for the intent router, partitioned by model and outcome.",
+    ["model", "status"],
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0],
+)
+
+jarvis_router_fallbacks_total = Counter(
+    "jarvis_router_fallbacks_total",
+    "Total LLM router fallbacks to CONVERSATION, partitioned by reason (timeout / error).",
+    ["reason"],
+)
+
 
 # ── Server bootstrap ───────────────────────────────────────────────────────────
 

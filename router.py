@@ -5,13 +5,38 @@ import os
 import json
 import logging
 import re
+import threading
 import requests
 from config import OLLAMA_MODEL
+from core.metrics import jarvis_router_latency_seconds, jarvis_router_fallbacks_total
 
 logger = logging.getLogger(__name__)
 
 # Lê da variável de ambiente injetada pelo Docker, ou cai pro localhost se estiver rodando por fora
-OLLAMA_URL = os.environ.get("OLLAMA_HOST", "http://localhost:11434") + "/api/generate"
+_OLLAMA_BASE = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+OLLAMA_URL   = _OLLAMA_BASE + "/api/generate"
+
+# Mini-LLM for routing — fast 1B model, overridable via env
+ROUTER_MODEL = os.environ.get("ROUTER_MODEL", "llama3.2:1b")
+
+
+def _ensure_router_model_bg() -> None:
+    """Pull ROUTER_MODEL in a background daemon thread so it never blocks startup."""
+    def _pull() -> None:
+        try:
+            tags   = requests.get(f"{_OLLAMA_BASE}/api/tags", timeout=5).json()
+            models = [m["name"] for m in tags.get("models", [])]
+            if ROUTER_MODEL not in models:
+                logger.info("[ROUTER] Pulling mini-LLM %s in background...", ROUTER_MODEL)
+                requests.post(f"{_OLLAMA_BASE}/api/pull", json={"name": ROUTER_MODEL}, timeout=300)
+                logger.info("[ROUTER] Mini-LLM %s ready.", ROUTER_MODEL)
+        except Exception as exc:
+            logger.warning("[ROUTER] Background pull failed (silent): %s", exc)
+
+    threading.Thread(target=_pull, daemon=True).start()
+
+
+_ensure_router_model_bg()  # fire-and-forget at module load
 
 # ── Deterministic CREATOR pre-check (runs BEFORE Ollama) ─────────────────────
 _CREATOR_KEYWORDS = re.compile(
@@ -220,28 +245,27 @@ FALLBACK for everything else: questions, explanations, chitchat, analysis, advic
 
 def _llm_classify(user_input: str) -> str:
     """
-    Send the input to Ollama for semantic classification.
+    Send the input to Ollama for semantic classification using the mini ROUTER_MODEL.
 
     Reliability strategy:
-      - timeout=60s  : accommodates cold-start latency for local 7B models.
-      - keep_alive=1h: instructs Ollama to keep the model loaded after first use,
-                       eliminating cold-start on subsequent requests.
-      - Retries=2    : ONLY on ConnectionError (server not yet up). ReadTimeout is
-                       NOT retried — if 60 s elapsed and Ollama couldn't respond,
-                       a retry would lock up the UX for another 60 s.
+      - timeout=60s    : accommodates cold-start latency.
+      - keep_alive=15m : keep mini-LLM warm between requests without monopolising VRAM.
+      - Retries=2      : ONLY on ConnectionError (server not yet up). ReadTimeout is
+                         NOT retried — would lock up UX for another 60 s.
+      - Labeled metrics: success latency, timeout fallbacks, error fallbacks.
       - Instant fallback to CONVERSATION on any unrecoverable failure.
     """
     import time as _time
 
     payload = {
-        "model":      OLLAMA_MODEL,
+        "model":      ROUTER_MODEL,
         "prompt":     f"Classify this message:\n\n{user_input}",
         "system":     _ROUTER_SYSTEM_PROMPT,
         "stream":     False,
-        "format":     "json",       # force Ollama to emit valid JSON
-        "keep_alive": "1h",         # keep model hot — eliminates future cold-start
+        "format":     "json",        # force Ollama to emit valid JSON
+        "keep_alive": "15m",         # keep mini-LLM warm; shorter than main model
         "options": {
-            "temperature": 0.0,     # deterministic classification
+            "temperature": 0.0,      # deterministic classification
             "num_predict": 30,
         },
     }
@@ -258,32 +282,35 @@ def _llm_classify(user_input: str) -> str:
             raw_text = re.sub(r"```(?:json)?|```", "", raw_text).strip()
             parsed   = json.loads(raw_text)
             skill    = parsed.get("skill", "CONVERSATION").upper().strip()
+            jarvis_router_latency_seconds.labels(model=ROUTER_MODEL, status="success").observe(elapsed)
             logger.debug("[ROUTER] LLM classified '%s…' → %s (%.2fs, attempt %d)",
                          user_input[:40], skill, elapsed, attempt)
             return skill if skill in VALID_SKILLS else "CONVERSATION"
 
         except requests.exceptions.ReadTimeout:
-            # 60 s elapsed — model is not responding. Retrying would hurt UX.
             elapsed = _time.monotonic() - t0
+            jarvis_router_fallbacks_total.labels(reason="timeout").inc()
             logger.error("[ROUTER] LLM ReadTimeout after %.1fs — falling back to CONVERSATION", elapsed)
             return "CONVERSATION"
 
         except requests.exceptions.ConnectionError as exc:
-            # Ollama process not yet listening (race at startup). Retry once.
             elapsed = _time.monotonic() - t0
             if attempt < _MAX_ATTEMPTS:
                 logger.warning("[ROUTER] ConnectionError (attempt %d/%d, %.1fs) — retrying in 2s: %s",
                                attempt, _MAX_ATTEMPTS, elapsed, exc)
                 _time.sleep(2)
             else:
+                jarvis_router_fallbacks_total.labels(reason="error").inc()
                 logger.error("[ROUTER] Ollama unreachable after %d attempts — falling back", _MAX_ATTEMPTS)
                 return "CONVERSATION"
 
         except (json.JSONDecodeError, KeyError) as exc:
+            jarvis_router_fallbacks_total.labels(reason="error").inc()
             logger.warning("[ROUTER] LLM returned unparseable response: %s", exc)
             return "CONVERSATION"
 
         except Exception as exc:
+            jarvis_router_fallbacks_total.labels(reason="error").inc()
             logger.error("[ROUTER] Unexpected error during LLM classification: %s", exc)
             return "CONVERSATION"
 
