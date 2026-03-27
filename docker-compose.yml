@@ -134,12 +134,12 @@ services:
         MAX_RETRIES=30;
         COUNT=0;
         echo '[OLLAMA-INIT] Waiting for API...';
-        until curl -s http://localhost:11434/api/tags > /dev/null || [ \$COUNT -eq \$MAX_RETRIES ]; do
+        until curl -s http://localhost:11434/api/tags > /dev/null || [ $$COUNT -eq $$MAX_RETRIES ]; do
           sleep 2;
-          COUNT=\$((COUNT+1));
+          COUNT=$$((COUNT+1));
         done;
-        if [ \$COUNT -eq \$MAX_RETRIES ]; then
-          echo '[OLLAMA-INIT] ERROR: API timeout. Proceeding with caution...';
+        if [ $$COUNT -eq $$MAX_RETRIES ]; then
+          echo '[OLLAMA-INIT] ERROR: API timeout.';
         else
           echo '[OLLAMA-INIT] API Ready. Checking model: mxbai-embed-large';
           ollama pull mxbai-embed-large;
@@ -152,7 +152,7 @@ services:
       interval: 15s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 180s
     deploy:
       resources:
         reservations:
