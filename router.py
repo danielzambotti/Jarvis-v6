@@ -56,33 +56,27 @@ VALID_SKILLS = {"OS_COMMAND", "WEB_SEARCH", "CREATOR", "FS_MANAGER", "BACKUP",
                 "JAVA_GITOPS", "FACTORY", "SYSTEM_STATUS", "JARVIS_HEALTH",
                 "CONVERSATION", "MEMORY_VAULT"}
 
-# ── Explicit memory guard (Tier-1 bypass for LLM safety refusals) ────────────
-# Matches Portuguese/English credential-save intents that local LLMs may refuse
-# to classify (e.g. "guarde minha senha").  Runs BEFORE the LLM, offline-safe.
-_EXPLICIT_MEMORY_PATTERN = re.compile(
-    r'\b(guard[ae]|salv[ae]|memoriz[ae]|lembre[-\s]se|anot[ae]).{0,40}'
-    r'(mem[oó]ria|senha|chave|token|isso|credencia[is])\b',
-    re.IGNORECASE,
+# ── Unified Memory Guard (Tier-1) ──────────────────────────────────────────
+_MEMORY_SAVE_PATTERN = re.compile(
+    r'\b(guard[ae]|salv[ae]|memoriz[ae]|lembre[-\s]se|anot[ae]).{0,40}(mem[oó]ria|senha|chave|token|credencia[is]|isso)\b',
+    re.IGNORECASE
 )
-
-def _is_memory_vault_intent(text: str) -> bool:
-    return bool(_EXPLICIT_MEMORY_PATTERN.search(text))
-
-# Matches retrieval questions perfectly aligned with memory_vault.py
 _MEMORY_RETRIEVE_PATTERN = re.compile(
     r'\b(what\s+do\s+you\s+remember|what\s+do\s+you\s+know\s+about|recall|'
     r'o\s+que\s+voc[êe]\s+lembra|oq\s+vc\s+lembra|o\s+que\s+sabe\s+sobre)\b',
     re.IGNORECASE
 )
-
-# Matches the exact REVEAL trigger from memory_vault.py (requires credential context to avoid over-matching)
 _MEMORY_REVEAL_PATTERN = re.compile(
-    r'\b(reveal|mostrar|exibir|revelar).{0,40}(senha|password|token|credencia[is]|chave)\b',
+    r'\b(reveal|mostrar|exibir|revelar).{0,40}(senha|password|token|credencia[is]|chave|servidor)\b',
     re.IGNORECASE
 )
 
-def _is_memory_retrieve_or_reveal(text: str) -> bool:
-    return bool(_MEMORY_RETRIEVE_PATTERN.search(text)) or bool(_MEMORY_REVEAL_PATTERN.search(text))
+def _is_memory_intent(text: str) -> bool:
+    return (
+        bool(_MEMORY_SAVE_PATTERN.search(text)) or
+        bool(_MEMORY_RETRIEVE_PATTERN.search(text)) or
+        bool(_MEMORY_REVEAL_PATTERN.search(text))
+    )
 
 _UI_KEYWORDS = re.compile(
     r'\b(click|clique?|screenshot|capturar\s+tela|digitar?|type\s+text|'
@@ -349,16 +343,12 @@ def route(user_input: str) -> str:
     Removed from Tier 1 (now handled by Tier 2 LLM):
       - _is_system_status_intent  (collided with _is_memory_vault_intent on "memory")
 
-    Reinstated in Tier 1 (explicit credential-save bypass):
-      - _is_memory_vault_intent   (narrow regex for Portuguese/English credential saves
-                                   that local LLMs may refuse to classify)
+    Unified in Tier 1 (single foolproof memory guard):
+      - _is_memory_intent   (covers save, retrieval, and REVEAL — offline-safe)
     """
 
-    # ── Tier 1: unambiguous syntactic guards ──────────────────────────────────
-    # MEMORY_VAULT first: retrieval/REVEAL bypass prevents OS_COMMAND hallucination
-    # on technical vocabulary (e.g. "servidor", "system", "machine").
-    if _is_memory_retrieve_or_reveal(user_input): return "MEMORY_VAULT"
-    if _is_memory_vault_intent(user_input): return "MEMORY_VAULT"
+    # ── Tier 1: Unambiguous syntactic guards ──────────────────────────────────
+    if _is_memory_intent(user_input): return "MEMORY_VAULT"
     if _is_jarvis_health_intent(user_input): return "JARVIS_HEALTH"
     if _is_factory_intent(user_input):       return "FACTORY"
     if _is_ui_intent(user_input):            return "UI_ACTION"
