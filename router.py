@@ -75,8 +75,11 @@ _MEMORY_RETRIEVE_PATTERN = re.compile(
     re.IGNORECASE
 )
 
-# Matches the exact REVEAL trigger from memory_vault.py
-_MEMORY_REVEAL_PATTERN = re.compile(r'\bREVEAL\b', re.IGNORECASE)
+# Matches the exact REVEAL trigger from memory_vault.py (requires credential context to avoid over-matching)
+_MEMORY_REVEAL_PATTERN = re.compile(
+    r'\b(reveal|mostrar|exibir|revelar).{0,40}(senha|password|token|credencia[is]|chave)\b',
+    re.IGNORECASE
+)
 
 def _is_memory_retrieve_or_reveal(text: str) -> bool:
     return bool(_MEMORY_RETRIEVE_PATTERN.search(text)) or bool(_MEMORY_REVEAL_PATTERN.search(text))
