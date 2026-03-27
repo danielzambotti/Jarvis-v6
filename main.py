@@ -6,6 +6,33 @@ import logging
 import sys
 import os
 from pathlib import Path
+
+# ── Headless X11 Workaround for PyAutoGUI ────────────────────────────────────
+# Must execute BEFORE any import that loads pyautogui → Xlib.
+# In headless Docker + Xvfb, .Xauthority does not exist at startup, causing:
+#   FileNotFoundError: /app/.Xauthority
+# This patch is safe, idempotent, and cannot crash the app.
+import os as _os
+from pathlib import Path as _Path
+
+def _ensure_xauthority() -> None:
+    try:
+        xauth_path = _os.environ.get("XAUTHORITY", _os.path.expanduser("~/.Xauthority"))
+        path_obj = _Path(xauth_path)
+
+        # Ensure parent directory exists
+        path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+        # Create file if missing (idempotent — touch is a no-op if it already exists)
+        path_obj.touch(exist_ok=True)
+
+        print(f"[BOOT] XAUTHORITY ensured at: {path_obj}")
+    except Exception as exc:
+        print(f"[BOOT-WARN] Failed to ensure XAUTHORITY: {exc}")
+
+_ensure_xauthority()
+# ─────────────────────────────────────────────────────────────────────────────
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
