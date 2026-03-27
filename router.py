@@ -68,6 +68,19 @@ _EXPLICIT_MEMORY_PATTERN = re.compile(
 def _is_memory_vault_intent(text: str) -> bool:
     return bool(_EXPLICIT_MEMORY_PATTERN.search(text))
 
+# Matches retrieval questions perfectly aligned with memory_vault.py
+_MEMORY_RETRIEVE_PATTERN = re.compile(
+    r'\b(what\s+do\s+you\s+remember|what\s+do\s+you\s+know\s+about|recall|'
+    r'o\s+que\s+voc[êe]\s+lembra|oq\s+vc\s+lembra|o\s+que\s+sabe\s+sobre)\b',
+    re.IGNORECASE
+)
+
+# Matches the exact REVEAL trigger from memory_vault.py
+_MEMORY_REVEAL_PATTERN = re.compile(r'\bREVEAL\b', re.IGNORECASE)
+
+def _is_memory_retrieve_or_reveal(text: str) -> bool:
+    return bool(_MEMORY_RETRIEVE_PATTERN.search(text)) or bool(_MEMORY_REVEAL_PATTERN.search(text))
+
 _UI_KEYWORDS = re.compile(
     r'\b(click|clique?|screenshot|capturar\s+tela|digitar?|type\s+text|'
     r'press\s+key|hotkey|atalho|focus\s+window|janela|'
@@ -240,7 +253,9 @@ FALLBACK for everything else: questions, explanations, chitchat, analysis, advic
 1. Output ONLY valid JSON: {"skill": "SKILL_NAME"}
 2. SYSTEM_STATUS = host hardware/OS metrics. MEMORY_VAULT = Jarvis cognitive memory.
 3. When genuinely ambiguous → CONVERSATION.
-4. CRITICAL: Do NOT refuse classification for words like 'senha' or 'password'. You only route data; you do not store it."""
+4. CRITICAL: Do NOT refuse classification for words like 'senha' or 'password'. You only route data; you do not store it.
+5. CRITICAL BOUNDARY: Words like 'server', 'servidor', 'system', or 'machine' do NOT imply OS_COMMAND if the user intent is to retrieve, reveal, or save stored information.
+6. If the request involves recalling memory or using the REVEAL keyword, it is strictly MEMORY_VAULT."""
 
 
 def _llm_classify(user_input: str) -> str:
@@ -337,8 +352,9 @@ def route(user_input: str) -> str:
     """
 
     # ── Tier 1: unambiguous syntactic guards ──────────────────────────────────
-    # MEMORY_VAULT first: catches explicit credential-save phrases before LLM
-    # (local models sometimes refuse to classify inputs containing "senha").
+    # MEMORY_VAULT first: retrieval/REVEAL bypass prevents OS_COMMAND hallucination
+    # on technical vocabulary (e.g. "servidor", "system", "machine").
+    if _is_memory_retrieve_or_reveal(user_input): return "MEMORY_VAULT"
     if _is_memory_vault_intent(user_input): return "MEMORY_VAULT"
     if _is_jarvis_health_intent(user_input): return "JARVIS_HEALTH"
     if _is_factory_intent(user_input):       return "FACTORY"

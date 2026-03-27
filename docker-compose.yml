@@ -124,11 +124,10 @@ services:
     volumes:
       - ollama-models:/root/.ollama
     environment:
-      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_KEEP_ALIVE=15m
       - OLLAMA_MAX_LOADED_MODELS=2
-      - NVIDIA_VISIBLE_DEVICES=all
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      test: ["CMD", "ollama", "list"]
       interval: 10s
       timeout: 5s
       retries: 5
