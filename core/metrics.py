@@ -97,6 +97,18 @@ jarvis_chromadb_errors_total = Counter(
     ["operation"],
 )
 
+jarvis_embedding_latency_seconds = Histogram(
+    "jarvis_embedding_latency_seconds",
+    "Latency of individual embedding calls to Ollama /api/embed.",
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+)
+
+jarvis_embedding_failures_total = Counter(
+    "jarvis_embedding_failures_total",
+    "Total embedding generation failures, partitioned by failure reason (timeout/contract/api).",
+    ["reason"],
+)
+
 # ── Router Metrics ─────────────────────────────────────────────────────────────
 
 jarvis_router_latency_seconds = Histogram(

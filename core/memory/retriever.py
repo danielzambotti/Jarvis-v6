@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # ── Config ─────────────────────────────────────────────────────────────────────
 
 _OLLAMA_HOST    = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
-_EMBED_URL      = f"{_OLLAMA_HOST}/api/embeddings"
+_EMBED_URL      = f"{_OLLAMA_HOST}/api/embed"
 _EMBED_MODEL    = os.environ.get("EMBEDDING_MODEL", os.environ.get("OLLAMA_EMBED_MODEL", "mxbai-embed-large"))
 _REDIS_URL      = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 _REDIS_EMBED_TTL = 86400   # 24h
@@ -51,12 +51,23 @@ def _get_redis():
 
 # ── Embedding Generation ───────────────────────────────────────────────────────
 
+def _classify_failure(exc: Exception) -> str:
+    """Map an exception to a Prometheus reason label (timeout / contract / api)."""
+    msg = str(exc).lower()
+    cls = type(exc).__name__.lower()
+    if "timeout" in cls or "timeout" in msg:
+        return "timeout"
+    if "contract" in msg:
+        return "contract"
+    return "api"
+
+
 def generate_embedding(text: str) -> Optional[list]:
     """
-    Generate an embedding vector for text via Ollama.
+    Generate an embedding vector for text via Ollama /api/embed (2026 API).
     Results are cached in Redis for _REDIS_EMBED_TTL seconds.
-    Retries up to 3 times with exponential backoff on failure.
-    Returns list[float] or None on all-retry failure.
+    2 attempts total with a 2s delay between them.
+    Returns list[float] or None on terminal failure.
     """
     import requests as _req
 
@@ -72,46 +83,79 @@ def generate_embedding(text: str) -> Optional[list]:
         except Exception:
             pass
 
-    # Ollama call with retry
-    embedding = None
-    for attempt in range(3):
+    vector = None
+    for attempt in range(2):
         start = time.time()
         try:
             resp = _req.post(
                 _EMBED_URL,
-                json={"model": _EMBED_MODEL, "prompt": text},
+                json={"model": _EMBED_MODEL, "input": text},
                 timeout=30,
             )
             resp.raise_for_status()
-            embedding = resp.json().get("embedding")
-            latency = time.time() - start
-            if _jarvis_embedding_generation_seconds is not None:
-                _jarvis_embedding_generation_seconds.observe(latency)
+
+            # Defensive parsing: /api/embed → "embeddings"[0]; legacy → "embedding"
+            body = resp.json()
+            raw = body.get("embedding")
+            if raw is None:
+                emb_list = body.get("embeddings")
+                if emb_list:
+                    raw = emb_list[0]
+            if raw is None:
+                raise RuntimeError(f"Ollama contract violation: {resp.text[:200]}")
+
+            # Strict type validation
+            if not isinstance(raw, list):
+                raise RuntimeError(f"Ollama returned non-list vector: {type(raw).__name__}")
+            if not raw:
+                raise RuntimeError("Ollama returned empty embedding vector")
+            if not all(isinstance(x, float) for x in raw):
+                raise RuntimeError(
+                    f"Ollama vector contains non-float values: {type(raw[0]).__name__}"
+                )
+
+            vector = raw
+            duration = time.time() - start
+
+            if _jarvis_embedding_latency_seconds is not None:
+                _jarvis_embedding_latency_seconds.observe(duration)
+
+            logger.info(
+                "[RETRIEVER-TRACE] Vector generated | model=%s | dims=%d | latency=%.3fs",
+                _EMBED_MODEL, len(vector), duration,
+            )
             break
+
         except Exception as exc:
-            wait = 2 ** attempt   # 1s, 2s, 4s
-            logger.warning("[RETRIEVER] Embedding attempt %d failed (%s) — retrying in %ds", attempt + 1, exc, wait)
-            if attempt < 2:
-                time.sleep(wait)
-            else:
-                logger.error("[RETRIEVER] Embedding generation failed after 3 attempts for text: %s…", text[:80])
+            reason = _classify_failure(exc)
+            logger.warning(
+                "[RETRIEVER] Embedding attempt %d/2 failed [reason=%s]: %s",
+                attempt + 1, reason, exc,
+            )
+            if _jarvis_embedding_failures_total is not None:
                 try:
-                    from core.metrics import jarvis_chromadb_errors_total
-                    jarvis_chromadb_errors_total.labels(operation="embedding").inc()
+                    _jarvis_embedding_failures_total.labels(reason=reason).inc()
                 except Exception:
                     pass
+            if attempt == 0:
+                time.sleep(2)
+            else:
+                logger.error(
+                    "[RETRIEVER-ERROR] Terminal failure in embedding pipeline",
+                    exc_info=True,
+                )
 
-    if embedding is None:
+    if vector is None:
         return None
 
     # Cache write
     if r is not None:
         try:
-            r.setex(cache_key, _REDIS_EMBED_TTL, json.dumps(embedding))
+            r.setex(cache_key, _REDIS_EMBED_TTL, json.dumps(vector))
         except Exception:
             pass
 
-    return embedding
+    return vector
 
 
 # ── Smart Memory Trigger ───────────────────────────────────────────────────────
@@ -200,13 +244,17 @@ def _record_retrieval_miss() -> None:
 
 # ── Lazy metrics import (avoids circular: core.metrics → core.memory → core.metrics) ──
 
-_jarvis_embedding_generation_seconds    = None
+_jarvis_embedding_latency_seconds        = None
+_jarvis_embedding_failures_total         = None
+_jarvis_embedding_generation_seconds     = None   # kept for compat
 _jarvis_memory_retrieval_latency_seconds = None
 _jarvis_memory_retrieval_hits_total      = None
 
 try:
     from core.metrics import (
-        jarvis_embedding_generation_seconds    as _jarvis_embedding_generation_seconds,
+        jarvis_embedding_latency_seconds        as _jarvis_embedding_latency_seconds,
+        jarvis_embedding_failures_total         as _jarvis_embedding_failures_total,
+        jarvis_embedding_generation_seconds     as _jarvis_embedding_generation_seconds,
         jarvis_memory_retrieval_latency_seconds as _jarvis_memory_retrieval_latency_seconds,
         jarvis_memory_retrieval_hits_total      as _jarvis_memory_retrieval_hits_total,
     )
