@@ -12,15 +12,26 @@ WORKDIR /build
 RUN groupadd -r jarvis --gid=1000 && \
     useradd -r -g jarvis --uid=1000 --home-dir=/app --shell=/bin/bash jarvis
 
-# System dependencies (minimal attack surface)
+# System dependencies — includes full X11/GUI stack for pyautogui + headless Xvfb
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    python3-tk \
+    python3-dev \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender-dev \
+    libx11-6 \
+    libxtst6 \
+    libxi6 \
+    libxrandr2 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
     ffmpeg \
     xvfb \
+    x11-utils \
     git \
     curl \
     && rm -rf /var/lib/apt/lists/* \
@@ -46,12 +57,30 @@ RUN groupadd -r jarvis --gid=1000 && \
     mkdir -p /app/workspace /app/backups /app/logs /app/memory /app/ollama_data && \
     chown -R jarvis:jarvis /app
 
-# Runtime-only dependencies (no build tools)
+# Runtime dependencies — full headless GUI stack for pyautogui stability
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-tk \
+    scrot \
+    x11-utils \
     libglib2.0-0 \
     libsm6 \
+    libx11-6 \
     libxext6 \
     libxrender1 \
+    libxtst6 \
+    libxi6 \
+    libxrandr2 \
+    libxcb1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
+    libasound2 \
     ffmpeg \
     xvfb \
     curl \
