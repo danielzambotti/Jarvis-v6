@@ -56,6 +56,13 @@ VALID_SKILLS = {"OS_COMMAND", "WEB_SEARCH", "CREATOR", "FS_MANAGER", "BACKUP",
                 "JAVA_GITOPS", "FACTORY", "SYSTEM_STATUS", "JARVIS_HEALTH",
                 "CONVERSATION", "MEMORY_VAULT"}
 
+# ── Hard intent contracts — single source of truth for routing string literals ──
+# Import this constant in main.py to prevent silent key mismatches in SKILL_MAP.
+INTENT_MEMORY_VAULT = "MEMORY_VAULT"
+
+# Debug routing flag — set DEBUG_ROUTING=true env var for full decision tree logs
+_DEBUG_ROUTING = os.environ.get("DEBUG_ROUTING", "").lower() in ("1", "true", "yes")
+
 # ── Unified Memory Guard (Tier-1) ──────────────────────────────────────────
 _MEMORY_SAVE_PATTERN = re.compile(
     r'\b(guard[ae]|salv[ae]|memoriz[ae]|lembre[-\s]se|anot[ae]).{0,40}(mem[oó]ria|senha|chave|token|credencia[is]|isso)\b',
@@ -288,6 +295,8 @@ def _llm_classify(user_input: str) -> str:
         },
     }
 
+    logger.info("[ROUTER-TRACE] Falling to Tier2 LLM classification | input='%s'", user_input[:80])
+
     _MAX_ATTEMPTS = 2
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         t0 = _time.monotonic()
@@ -301,6 +310,7 @@ def _llm_classify(user_input: str) -> str:
             parsed   = json.loads(raw_text)
             skill    = parsed.get("skill", "CONVERSATION").upper().strip()
             jarvis_router_latency_seconds.labels(model=ROUTER_MODEL, status="success").observe(elapsed)
+            logger.info("[ROUTER-TRACE] LLM classified intent=%s (%.2fs, attempt %d)", skill, elapsed, attempt)
             logger.debug("[ROUTER] LLM classified '%s…' → %s (%.2fs, attempt %d)",
                          user_input[:40], skill, elapsed, attempt)
             return skill if skill in VALID_SKILLS else "CONVERSATION"
@@ -309,6 +319,7 @@ def _llm_classify(user_input: str) -> str:
             elapsed = _time.monotonic() - t0
             jarvis_router_fallbacks_total.labels(reason="timeout").inc()
             logger.error("[ROUTER] LLM ReadTimeout after %.1fs — falling back to CONVERSATION", elapsed)
+            logger.warning("[ROUTER-TRACE] LLM fallback triggered → CONVERSATION | reason=timeout after %.1fs", elapsed)
             return "CONVERSATION"
 
         except requests.exceptions.ConnectionError as exc:
@@ -320,16 +331,19 @@ def _llm_classify(user_input: str) -> str:
             else:
                 jarvis_router_fallbacks_total.labels(reason="error").inc()
                 logger.error("[ROUTER] Ollama unreachable after %d attempts — falling back", _MAX_ATTEMPTS)
+                logger.warning("[ROUTER-TRACE] LLM fallback triggered → CONVERSATION | reason=connection_error")
                 return "CONVERSATION"
 
         except (json.JSONDecodeError, KeyError) as exc:
             jarvis_router_fallbacks_total.labels(reason="error").inc()
             logger.warning("[ROUTER] LLM returned unparseable response: %s", exc)
+            logger.warning("[ROUTER-TRACE] LLM fallback triggered → CONVERSATION | reason=parse_error: %s", exc)
             return "CONVERSATION"
 
         except Exception as exc:
             jarvis_router_fallbacks_total.labels(reason="error").inc()
             logger.error("[ROUTER] Unexpected error during LLM classification: %s", exc)
+            logger.warning("[ROUTER-TRACE] LLM fallback triggered → CONVERSATION | reason=unexpected: %s", exc)
             return "CONVERSATION"
 
     return "CONVERSATION"  # unreachable; satisfies type checkers
@@ -354,16 +368,36 @@ def route(user_input: str) -> str:
     """
 
     # ── Tier 1: Unambiguous syntactic guards ──────────────────────────────────
-    if _is_memory_intent(user_input): return "MEMORY_VAULT"
-    if _is_jarvis_health_intent(user_input): return "JARVIS_HEALTH"
-    if _is_factory_intent(user_input):       return "FACTORY"
-    if _is_ui_intent(user_input):            return "UI_ACTION"
-    if _is_java_gitops_intent(user_input):   return "JAVA_GITOPS"
-    if _is_refactor_intent(user_input):      return "REFACTOR"
-    if _is_install_intent(user_input):       return "INSTALL"
-    if _is_backup_intent(user_input):        return "BACKUP"
-    if _is_fs_intent(user_input):            return "FS_MANAGER"
-    if _is_creator_intent(user_input):       return "CREATOR"
+    if _is_memory_intent(user_input):
+        logger.info("[ROUTER-TRACE] Tier1 MATCH → MEMORY_VAULT | input='%s'", user_input[:80])
+        return INTENT_MEMORY_VAULT
+    if _is_jarvis_health_intent(user_input):
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → JARVIS_HEALTH | input='%s'", user_input[:80])
+        return "JARVIS_HEALTH"
+    if _is_factory_intent(user_input):
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → FACTORY | input='%s'", user_input[:80])
+        return "FACTORY"
+    if _is_ui_intent(user_input):
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → UI_ACTION | input='%s'", user_input[:80])
+        return "UI_ACTION"
+    if _is_java_gitops_intent(user_input):
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → JAVA_GITOPS | input='%s'", user_input[:80])
+        return "JAVA_GITOPS"
+    if _is_refactor_intent(user_input):
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → REFACTOR | input='%s'", user_input[:80])
+        return "REFACTOR"
+    if _is_install_intent(user_input):
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → INSTALL | input='%s'", user_input[:80])
+        return "INSTALL"
+    if _is_backup_intent(user_input):
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → BACKUP | input='%s'", user_input[:80])
+        return "BACKUP"
+    if _is_fs_intent(user_input):
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → FS_MANAGER | input='%s'", user_input[:80])
+        return "FS_MANAGER"
+    if _is_creator_intent(user_input):
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → CREATOR | input='%s'", user_input[:80])
+        return "CREATOR"
 
     # ── Tier 2: LLM semantic classifier ──────────────────────────────────────
     # Handles: SYSTEM_STATUS, MEMORY_VAULT, OS_COMMAND, WEB_SEARCH, GITHUB,

@@ -13,7 +13,7 @@ from telegram.ext import (
 
 from config import TELEGRAM_TOKEN, ALLOWED_CHAT_ID
 from security import is_authorized, sanitize_input, detect_prompt_injection, check_rate_limit
-from router import route
+from router import route, INTENT_MEMORY_VAULT, _DEBUG_ROUTING
 from skills import (
     conversational, web_search, creator, fs_manager, backup_manager,
     inspector, github_search, perceptor, refactor, tech_lead, os_controller,
@@ -55,24 +55,30 @@ _BACKUP_INTERVAL_HOURS = int(os.environ.get("BACKUP_INTERVAL_HOURS", "12"))
 _RPO_HOURS             = int(os.environ.get("RPO_HOURS", "72"))
 _BACKUP_STARTUP_DELAY  = 300   # seconds before first backup (let system stabilise)
 
-# ── Skill Dispatch Table (Sem UI_ACTION) ──────────────────────────────────────
-# Dentro do seu main.py
+# ── Skill Dispatch Table ───────────────────────────────────────────────────────
 SKILL_MAP = {
-    "OS_COMMAND":    os_controller.execute,
-    "WEB_SEARCH":    web_search.execute,
-    "CREATOR":       tech_lead.execute,
-    "FACTORY":       software_factory.execute,
-    "BACKUP":        backup_manager.execute,
-    "INSPECTOR":     inspector.execute,
-    "GITHUB":        github_search.execute,
-    "REFACTOR":      refactor.execute,
-    "JAVA_GITOPS":   tech_lead.execute,
-    "CONVERSATION":  conversational.respond,
-    "MEMORY_VAULT":  memory_vault.execute,
-    "JARVIS_HEALTH": jarvis_health.execute,
-    "UI_ACTION":     ui_automation.execute,
-    "SYSTEM_STATUS": system_status.execute,
+    "OS_COMMAND":       os_controller.execute,
+    "WEB_SEARCH":       web_search.execute,
+    "CREATOR":          tech_lead.execute,
+    "FACTORY":          software_factory.execute,
+    "BACKUP":           backup_manager.execute,
+    "INSPECTOR":        inspector.execute,
+    "GITHUB":           github_search.execute,
+    "REFACTOR":         refactor.execute,
+    "JAVA_GITOPS":      tech_lead.execute,
+    "CONVERSATION":     conversational.respond,
+    INTENT_MEMORY_VAULT: memory_vault.execute,   # keyed by contract constant
+    "JARVIS_HEALTH":    jarvis_health.execute,
+    "UI_ACTION":        ui_automation.execute,
+    "SYSTEM_STATUS":    system_status.execute,
 }
+
+# ── Hard contract guard — fail fast at startup if MEMORY_VAULT is unmapped ───
+if INTENT_MEMORY_VAULT not in SKILL_MAP:
+    raise RuntimeError(
+        f"CRITICAL: {INTENT_MEMORY_VAULT!r} intent is not mapped in SKILL_MAP — "
+        "dispatcher will silently drop all memory requests"
+    )
 
 async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user_input: str) -> None:
     chat_id = update.effective_chat.id
@@ -105,10 +111,14 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user
     else:
         skill_name = route(user_input)
 
+        logger.info("[DISPATCH-TRACE] Received intent=%s | input='%s'", skill_name, user_input[:80])
+        if _DEBUG_ROUTING:
+            logger.debug("[DISPATCH-TRACE] Available skills=%s", list(SKILL_MAP.keys()))
+
         # RAG semantic memory injection: if the prompt references past context,
         # retrieve relevant memories and prepend them to the effective input.
         _rag_context = ""
-        if skill_name not in ("MEMORY_VAULT", "FS_MANAGER", "INSTALL") and should_use_memory(user_input):
+        if skill_name not in (INTENT_MEMORY_VAULT, "FS_MANAGER", "INSTALL") and should_use_memory(user_input):
             try:
                 _rag_context = await asyncio.to_thread(get_relevant_context, user_input)
             except Exception as _rag_exc:
@@ -131,8 +141,7 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user
                 elif skill_name == "INSTALL":
                     await update.message.reply_text("Pesquisando como instalar... aguarde.")
                     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-                    search_query = plan.get("search_query", effective_input)
-                    search_context = web_search.execute(search_query)
+                    search_context = web_search.execute(effective_input)
                     from skills import dev_architect
                     await update.message.reply_text("Instruções encontradas. Instalando...")
                     await context.bot.send_chat_action(chat_id=chat_id, action="typing")
@@ -142,7 +151,12 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user
                 elif skill_name == "CONVERSATION":
                     result = conversational.respond(effective_input, chat_id=confirm_key)
                 else:
-                    skill_fn = SKILL_MAP.get(skill_name, conversational.respond)
+                    if skill_name == INTENT_MEMORY_VAULT:
+                        logger.info("[DISPATCH-TRACE] Executing MEMORY_VAULT skill")
+                    skill_fn = SKILL_MAP.get(skill_name)
+                    if skill_fn is None:
+                        logger.error("[DISPATCH-TRACE] FALLBACK triggered for intent=%s — no handler found", skill_name)
+                        skill_fn = conversational.respond
                     result = skill_fn(effective_input)
             jarvis_requests_total.labels(skill=skill_name).inc()
         except Exception as e:

@@ -30,7 +30,9 @@ _SAVE_PATTERN = re.compile(
 )
 _RETRIEVE_PATTERN = re.compile(
     r'\b(what\s+do\s+you\s+remember|what\s+do\s+you\s+know\s+about|recall|'
-    r'o\s+que\s+voc[êe]\s+lembra|o\s+que\s+sabe\s+sobre)\b',
+    r'o\s+que\s+voc[êe]\s+(?:se\s+)?lembra|oq\s+vc\s+lembra|o\s+que\s+sabe\s+sobre|'
+    r'voc[êe]\s+(?:se\s+)?lembra|vc\s+(?:se\s+)?lembra|'
+    r'lembra\s+(?:da?|do|de)\b|se\s+lembra\s+(?:da?|do|de))\b',
     re.IGNORECASE,
 )
 _FORGET_PATTERN = re.compile(
@@ -110,24 +112,31 @@ def _get_fernet():
 
 def execute(user_input: str) -> str:
     """Dispatch to reveal / save / retrieve / forget based on intent."""
+    logger.info("[VAULT-TRACE] ENTRY | input='%s'", user_input[:80])
     try:
         # REVEAL must come before RETRIEVE — "REVEAL my password" would
         # otherwise be matched by the generic retrieve pattern.
+        logger.debug("[VAULT-TRACE] Checking REVEAL pattern...")
         if _REVEAL_PATTERN.search(user_input):
             return _reveal(user_input)
 
+        logger.debug("[VAULT-TRACE] Checking FORGET pattern...")
         if _FORGET_PATTERN.search(user_input):
             return _forget(user_input)
 
+        logger.debug("[VAULT-TRACE] Checking RETRIEVE pattern...")
         if _RETRIEVE_PATTERN.search(user_input):
             return _retrieve(user_input)
 
+        logger.debug("[VAULT-TRACE] Checking SAVE pattern...")
         if _SAVE_PATTERN.search(user_input) or _GENERIC_SAVE.search(user_input):
             content = _extract_save_content(user_input)
             return _save(content if content else user_input)
 
-        # Ambiguous — default to retrieve
-        return _retrieve(user_input)
+        # No pattern matched — router Tier-1 routed here but sub-intent is unrecognised.
+        # This should never happen if router patterns and vault patterns are in sync.
+        logger.error("[VAULT-TRACE] NO MATCH → returning explicit error | input='%s'", user_input[:80])
+        return "ERRO INTERNO: Vault acionado mas sem correspondência de intenção."
 
     except Exception as exc:
         logger.error("[MEMORY_VAULT] Unexpected error: %s", exc)
