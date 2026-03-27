@@ -29,3 +29,5 @@ prometheus-client
 flet
 aiohttp
 PyJWT>=2.8.0
+# Phase RAG: Vector memory (ChromaDB)
+chromadb>=0.4.0

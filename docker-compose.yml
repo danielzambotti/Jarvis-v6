@@ -22,6 +22,7 @@ volumes:
   redis-data:
   prometheus-data:
   grafana-data:
+  chroma-data:
 
 services:
   # ── Docker Socket Proxy (O Guarda-Costas Zero-Trust) ───────────────────
@@ -83,6 +84,7 @@ services:
       - TZ=America/Sao_Paulo
       # NOVO: Obriga o Jarvis a usar o proxy em vez do root socket
       - DOCKER_HOST=tcp://dockerproxy:2375
+      - CHROMADB_URL=http://chromadb:8000
     depends_on:
       dockerproxy:
         condition: service_started
@@ -92,6 +94,8 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      chromadb:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
       interval: 30s
@@ -164,6 +168,22 @@ services:
         limits:
           cpus: '0.5'
           memory: 512M
+
+  # ── ChromaDB (Vector Memory Store) ────────────────────────────────────
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: jarvis-chromadb
+    hostname: chromadb
+    restart: unless-stopped
+    networks:
+      - jarvis-internal
+    volumes:
+      - chroma-data:/chroma/chroma
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
 
   # ── PostgreSQL (Persistent Storage) ────────────────────────────────────
   postgres:

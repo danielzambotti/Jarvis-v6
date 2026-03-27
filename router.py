@@ -28,7 +28,8 @@ def _is_creator_intent(text: str) -> bool:
 
 VALID_SKILLS = {"OS_COMMAND", "WEB_SEARCH", "CREATOR", "FS_MANAGER", "BACKUP",
                 "INSPECTOR", "INSTALL", "GITHUB", "UI_ACTION", "REFACTOR",
-                "JAVA_GITOPS", "FACTORY", "SYSTEM_STATUS", "JARVIS_HEALTH", "CONVERSATION"}
+                "JAVA_GITOPS", "FACTORY", "SYSTEM_STATUS", "JARVIS_HEALTH",
+                "CONVERSATION", "MEMORY_VAULT"}
 
 _UI_KEYWORDS = re.compile(
     r'\b(click|clique?|screenshot|capturar\s+tela|digitar?|type\s+text|'
@@ -105,88 +106,169 @@ _JARVIS_HEALTH_KEYWORDS = re.compile(
 def _is_jarvis_health_intent(text: str) -> bool:
     return bool(_JARVIS_HEALTH_KEYWORDS.search(text))
 
-_SYSTEM_STATUS_KEYWORDS = re.compile(
-    r'\b(cpu|ram|mem[oó]ria|memory|disk|disco|diagnostic[o]?|diagnóstico|'
-    r'system\s*status|status\s*do\s*sistema|saúde\s*do\s*sistema|system\s*health|'
-    r'docker\s*status|containers?\s*status|how\s*is\s*(my\s*)?system|'
-    r'uso\s*do\s*sistema|recursos\s*do\s*sistema|system\s*resources|'
-    r'monitor\s*do\s*sistema|what.{0,20}running|o\s*que\s*est[aá]\s*rodando|'
-    r'processos|processes|desempenho|performance)\b',
-    re.IGNORECASE,
-)
-def _is_system_status_intent(text: str) -> bool:
-    return bool(_SYSTEM_STATUS_KEYWORDS.search(text))
+_ROUTER_SYSTEM_PROMPT = """You are a strict intent classifier for an AI assistant named Jarvis.
+Output ONLY a single JSON object: {"skill": "<SKILL>"}. No explanation. No markdown. No extra keys.
 
-_ROUTER_SYSTEM_PROMPT = """You are a strict intent classifier. Output a single JSON object: {"skill": "<SKILL>"}.
+## SKILLS
 
-SKILLS:
-- "OS_COMMAND"   : Open/launch apps, run programs, check system info (CPU/RAM/disk/processes).
-- "WEB_SEARCH"   : Search the internet, find current news, weather, prices, real-time facts.
-- "CREATOR"      : CREATE or WRITE a NEW file (.py, .txt, .json, etc.) with content.
-- "FS_MANAGER"   : Create DIRECTORIES/FOLDERS, list folder contents, check if path exists.
-- "INSPECTOR"    : Analyse, review, or read Jarvis's own source code files.
-- "FACTORY"      : The user explicitly asks to build a complete project, feature, or uses words like "linha de montagem", "fábrica", "arquitetura completa".
-- "CONVERSATION" : Everything else — questions, explanations, analysis, help, chitchat.
+### SYSTEM_STATUS
+Hardware and host OS monitoring ONLY.
+- CPU usage, RAM/memory usage (the physical machine), disk space, running processes, Docker container status.
+- Keywords: cpu, ram, disk, uptime, processes, docker ps, system load, server performance.
+- "how much RAM is free?" → SYSTEM_STATUS
+- "check CPU usage" → SYSTEM_STATUS
+- "what is memory usage?" → SYSTEM_STATUS   ← physical RAM, NOT Jarvis memory
 
-CRITICAL — FILE vs FOLDER:
-  "crie uma pasta chamada X"       → FS_MANAGER   (pasta = folder/directory)
-  "crie um arquivo chamado X.py"   → CREATOR      (arquivo = file with content)
-  "crie um script que faz Y"       → CREATOR      (script = file with code)
-  "liste o conteúdo de C:\\"       → FS_MANAGER
-  "verifique se a pasta existe"    → FS_MANAGER
+### MEMORY_VAULT
+Jarvis's COGNITIVE / LONG-TERM MEMORY SYSTEM — storing, retrieving, or erasing facts that Jarvis should remember.
+- Saving notes, passwords, preferences, facts, conversation history inside Jarvis's brain.
+- Keywords: remember, recall, forget, store in memory, what do you remember, save this fact.
+- "remember that my API key is XYZ" → MEMORY_VAULT
+- "what do you remember about me?" → MEMORY_VAULT
+- "forget what I told you about passwords" → MEMORY_VAULT
+- "save this to your memory" → MEMORY_VAULT
 
-EXAMPLES:
-  "abra o epic games"              → OS_COMMAND
-  "what is bitcoin price"          → WEB_SEARCH
-  "crie a pasta Jarvis 2.0 em C:"  → FS_MANAGER
-  "crie um arquivo test.py"        → CREATOR
-  "how do you work"                → INSPECTOR
+### OS_COMMAND
+Open/launch applications, run terminal commands, control the OS.
+- "abra o epic games", "open Notepad", "kill process X", "run this command".
 
-RULES:
-1. Output ONLY valid JSON. No explanation. No markdown.
-2. When in doubt → CONVERSATION."""
+### WEB_SEARCH
+Search the internet for current or real-time information.
+- News, prices, weather, documentation lookups, anything that requires fetching live data.
 
-def route(user_input: str) -> str:
-    if _is_jarvis_health_intent(user_input): return "JARVIS_HEALTH"
-    if _is_system_status_intent(user_input): return "SYSTEM_STATUS"
-    if _is_factory_intent(user_input): return "FACTORY"
-    if _is_ui_intent(user_input): return "UI_ACTION"
-    if _is_java_gitops_intent(user_input): return "JAVA_GITOPS"
-    if _is_refactor_intent(user_input): return "REFACTOR"
-    if _is_install_intent(user_input): return "INSTALL"
-    if _is_github_intent(user_input): return "GITHUB"
-    if _is_fs_intent(user_input): return "FS_MANAGER"
-    if _is_backup_intent(user_input): return "BACKUP"
-    if _is_creator_intent(user_input): return "CREATOR"
-    if _is_inspector_intent(user_input): return "INSPECTOR"
+### CREATOR
+Create or write a NEW FILE with content (.py, .txt, .json, .md, .yaml, etc.).
+- "create a file called X.py", "write a script that does Y", "generate a config file".
 
+### FS_MANAGER
+Manage the FILESYSTEM: create directories, list folder contents, check if paths exist.
+- "create a folder called X", "list files in C:\\Projects", "does this directory exist?".
+
+### BACKUP
+Create a backup or snapshot of the project/workspace.
+- "backup my project", "make a snapshot", "salvar backup".
+
+### INSPECTOR
+Analyse, review, or read Jarvis's own source code files.
+- "how do you work?", "show me your code", "review router.py".
+
+### GITHUB
+Search GitHub repositories or find coding best practices on GitHub.
+- "find a Python repo for X", "what are best practices for Y on GitHub".
+
+### JAVA_GITOPS
+Java/Spring Boot development tasks, Maven/Gradle builds, microservices, pull requests.
+- "create a Spring Boot endpoint", "open a PR", "build the Java service".
+
+### REFACTOR
+Rewrite or improve an EXISTING Jarvis source file.
+- "refactor main.py", "apply improvements to router.py", "fix the issues in security.py".
+
+### FACTORY
+Build a COMPLETE multi-file software project from scratch.
+- "linha de montagem", "fábrica de software", "scaffold an entire project".
+
+### UI_ACTION
+Automate the GUI: click, screenshot, type text, press hotkeys, control windows.
+- "click on button X", "take a screenshot", "type hello in the search box".
+
+### JARVIS_HEALTH
+Check the health of Jarvis's own infrastructure services (Ollama, Redis, PostgreSQL, ChromaDB).
+- "is Jarvis running?", "check Jarvis health", "are all services up?".
+
+### INSTALL
+Search the internet and then execute an installation or configuration.
+- "install Docker", "find and set up Node.js", "search and run the installer".
+
+### CONVERSATION
+FALLBACK for everything else: questions, explanations, chitchat, analysis, advice.
+
+## DISAMBIGUATION EXAMPLES
+
+| Message | Correct skill |
+|---|---|
+| "how much RAM is free?" | SYSTEM_STATUS |
+| "memory usage of the server" | SYSTEM_STATUS |
+| "remember that my password is 1234" | MEMORY_VAULT |
+| "what do you remember about Python?" | MEMORY_VAULT |
+| "save this to your memory" | MEMORY_VAULT |
+| "how is the CPU?" | SYSTEM_STATUS |
+| "forget what I told you" | MEMORY_VAULT |
+| "crie a pasta Jarvis 2.0 em C:" | FS_MANAGER |
+| "crie um arquivo test.py" | CREATOR |
+| "abra o epic games" | OS_COMMAND |
+| "is Jarvis healthy?" | JARVIS_HEALTH |
+
+## RULES
+1. Output ONLY valid JSON: {"skill": "SKILL_NAME"}
+2. SYSTEM_STATUS = host hardware/OS metrics. MEMORY_VAULT = Jarvis cognitive memory.
+3. When genuinely ambiguous → CONVERSATION."""
+
+
+def _llm_classify(user_input: str) -> str:
+    """Send the input to Ollama for semantic classification. Returns a VALID_SKILLS member."""
     payload = {
-        "model": OLLAMA_MODEL,
+        "model":  OLLAMA_MODEL,
         "prompt": f"Classify this message:\n\n{user_input}",
         "system": _ROUTER_SYSTEM_PROMPT,
         "stream": False,
+        "format": "json",           # force Ollama to return valid JSON
         "options": {
-            "temperature": 0.0,
+            "temperature": 0.0,     # deterministic
             "num_predict": 30,
-        }
+        },
     }
 
     try:
         response = requests.post(OLLAMA_URL, json=payload, timeout=15)
         response.raise_for_status()
         raw_text = response.json().get("response", "").strip()
-        parsed = json.loads(raw_text)
-        skill = parsed.get("skill", "CONVERSATION").upper().strip()
-
-        if skill not in VALID_SKILLS:
-            return "CONVERSATION"
-        return skill
+        # Strip markdown fences if the model adds them despite format:json
+        raw_text = re.sub(r"```(?:json)?|```", "", raw_text).strip()
+        parsed   = json.loads(raw_text)
+        skill    = parsed.get("skill", "CONVERSATION").upper().strip()
+        return skill if skill in VALID_SKILLS else "CONVERSATION"
 
     except requests.exceptions.ConnectionError:
         logger.error("[ROUTER] Ollama is not running at %s", OLLAMA_URL)
         return "CONVERSATION"
-    except (json.JSONDecodeError, KeyError) as e:
+    except (json.JSONDecodeError, KeyError) as exc:
+        logger.warning("[ROUTER] LLM returned unparseable response: %s", exc)
         return "CONVERSATION"
-    except Exception as e:
-        logger.error("[ROUTER] Unexpected error: %s", e)
+    except Exception as exc:
+        logger.error("[ROUTER] Unexpected error during LLM classification: %s", exc)
         return "CONVERSATION"
+
+
+def route(user_input: str) -> str:
+    """
+    Two-tier routing strategy:
+
+    Tier 1 — Deterministic regex guards for intents that have CLEAR syntactic
+              signals and NO collision risk.  Fast, zero-latency, offline-safe.
+
+    Tier 2 — LLM semantic classifier (Ollama, temperature=0, format=json) for
+              ALL ambiguous intents.  This includes SYSTEM_STATUS vs MEMORY_VAULT,
+              GITHUB, INSPECTOR, CONVERSATION, and anything not caught by Tier 1.
+
+    Removed from Tier 1 (now handled by Tier 2 LLM):
+      - _is_memory_vault_intent   (collided with _is_system_status_intent on "memory")
+      - _is_system_status_intent  (collided with _is_memory_vault_intent on "memory")
+    """
+
+    # ── Tier 1: unambiguous syntactic guards ──────────────────────────────────
+    # These patterns have ZERO overlap with each other or with Tier-2 skills.
+    if _is_jarvis_health_intent(user_input): return "JARVIS_HEALTH"
+    if _is_factory_intent(user_input):       return "FACTORY"
+    if _is_ui_intent(user_input):            return "UI_ACTION"
+    if _is_java_gitops_intent(user_input):   return "JAVA_GITOPS"
+    if _is_refactor_intent(user_input):      return "REFACTOR"
+    if _is_install_intent(user_input):       return "INSTALL"
+    if _is_backup_intent(user_input):        return "BACKUP"
+    if _is_fs_intent(user_input):            return "FS_MANAGER"
+    if _is_creator_intent(user_input):       return "CREATOR"
+
+    # ── Tier 2: LLM semantic classifier ──────────────────────────────────────
+    # Handles: SYSTEM_STATUS, MEMORY_VAULT, OS_COMMAND, WEB_SEARCH, GITHUB,
+    #          INSPECTOR, JAVA_GITOPS (edge cases), CONVERSATION, and all else.
+    return _llm_classify(user_input)

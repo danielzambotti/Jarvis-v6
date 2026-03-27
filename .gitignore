@@ -3,7 +3,7 @@ venv/
 ollama_data/
 backups/
 logs/
-memory/
+/memory/
 *.jsonl
 *.pyc
 __pycache__/

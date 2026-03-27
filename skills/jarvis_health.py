@@ -69,6 +69,41 @@ def _check_workspace() -> tuple[str, bool]:
         return f"🔴 **Workspace** — path check threw: {e}", False
 
 
+def _check_chromadb() -> tuple[str, bool]:
+    chroma_url = os.environ.get("CHROMADB_URL", "http://chromadb:8000")
+    try:
+        r = requests.get(f"{chroma_url}/api/v1/heartbeat", timeout=5)
+        if r.status_code == 200:
+            # Report memory count if available
+            count_str = "unknown"
+            try:
+                from core.memory.vector_store import get_vector_store
+                count = get_vector_store().get_collection_count()
+                count_str = str(count) if count >= 0 else "fallback mode"
+            except Exception:
+                pass
+            return f"🟢 **ChromaDB** — reachable at `{chroma_url}` | memories: {count_str}", True
+        return f"🟡 **ChromaDB** — HTTP {r.status_code} at `{chroma_url}`", False
+    except Exception as e:
+        return f"🔴 **ChromaDB** — unreachable at `{chroma_url}`: {e}", False
+
+
+def _check_prometheus() -> tuple[str, bool]:
+    try:
+        r = requests.get("http://prometheus:9090/-/healthy", timeout=5)
+        return f"🟢 **Prometheus** — healthy (HTTP {r.status_code})", True
+    except Exception as e:
+        return f"🔴 **Prometheus** — unreachable: {e}", False
+
+
+def _check_grafana() -> tuple[str, bool]:
+    try:
+        r = requests.get("http://grafana:3000/api/health", timeout=5)
+        return f"🟢 **Grafana** — healthy (HTTP {r.status_code})", True
+    except Exception as e:
+        return f"🔴 **Grafana** — unreachable: {e}", False
+
+
 def _check_tools() -> list[str]:
     lines = []
     for tool, skills in [("git", "REFACTOR/JAVA_GITOPS"), ("docker", "FACTORY/SYSTEM_STATUS")]:
@@ -83,7 +118,8 @@ def execute(user_input: str = "") -> str:
     """Return a full Jarvis infrastructure health report."""
     lines = ["## 🏥 Jarvis Infrastructure Health\n"]
 
-    checks = [_check_ollama, _check_redis, _check_postgres, _check_workspace]
+    checks = [_check_ollama, _check_redis, _check_postgres, _check_workspace,
+              _check_chromadb, _check_prometheus, _check_grafana]
     all_ok = True
     for check in checks:
         msg, ok = check()

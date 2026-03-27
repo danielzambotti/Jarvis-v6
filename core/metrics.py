@@ -1,13 +1,20 @@
 """
 core/metrics.py — Prometheus Instrumentation for Jarvis v6.0
 =============================================================
-Exposes four core metrics on :8000/metrics for Prometheus scraping.
+Exposes metrics on :8000/metrics for Prometheus scraping.
 
-Metrics:
+Core metrics:
   - jarvis_requests_total          Counter   (label: skill)
   - jarvis_security_blocks_total   Counter   (label: layer)
   - jarvis_dlp_redactions_total    Counter   (label: label)
   - jarvis_response_time_seconds   Histogram (label: skill)
+
+Memory / RAG metrics:
+  - jarvis_memory_insertions_total            Counter
+  - jarvis_memory_retrieval_latency_seconds   Histogram
+  - jarvis_embedding_generation_seconds       Histogram
+  - jarvis_memory_retrieval_hits_total        Counter   (label: hit)
+  - jarvis_chromadb_errors_total              Counter   (label: operation)
 
 Usage (in main.py):
     from core.metrics import start_metrics_server
@@ -56,6 +63,38 @@ jarvis_response_time_seconds = Histogram(
     ["skill"],
     # Fine-grained at sub-second; coarse above 10 s for LLM calls
     buckets=[0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0, 120.0, 180.0],
+)
+
+
+# ── Memory / Vector Store Metrics ─────────────────────────────────────────────
+
+jarvis_memory_insertions_total = Counter(
+    "jarvis_memory_insertions_total",
+    "Total memory entries inserted into the ChromaDB vector store.",
+)
+
+jarvis_memory_retrieval_latency_seconds = Histogram(
+    "jarvis_memory_retrieval_latency_seconds",
+    "End-to-end memory retrieval latency (embedding + similarity search + rerank).",
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+)
+
+jarvis_embedding_generation_seconds = Histogram(
+    "jarvis_embedding_generation_seconds",
+    "Latency of individual embedding generation calls to Ollama.",
+    buckets=[0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 5.0],
+)
+
+jarvis_memory_retrieval_hits_total = Counter(
+    "jarvis_memory_retrieval_hits_total",
+    "Memory retrieval outcomes partitioned by result (hit / miss).",
+    ["hit"],
+)
+
+jarvis_chromadb_errors_total = Counter(
+    "jarvis_chromadb_errors_total",
+    "Total errors communicating with ChromaDB, partitioned by operation.",
+    ["operation"],
 )
 
 

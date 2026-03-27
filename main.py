@@ -17,8 +17,10 @@ from router import route
 from skills import (
     conversational, web_search, creator, fs_manager, backup_manager,
     inspector, github_search, perceptor, refactor, tech_lead, os_controller,
-    software_factory
+    software_factory, memory_vault
 )
+from core.memory.retriever import get_relevant_context, should_use_memory
+from core.memory.vector_store import get_vector_store
 from skills.conversation_memory import save_message, rotate_history
 from skills.notion_logger import log_to_notion
 from skills.structured_logger import StructuredLogger
@@ -56,16 +58,17 @@ _BACKUP_STARTUP_DELAY  = 300   # seconds before first backup (let system stabili
 # ── Skill Dispatch Table (Sem UI_ACTION) ──────────────────────────────────────
 # Dentro do seu main.py
 SKILL_MAP = {
-    "OS_COMMAND":   os_controller.execute,
-    "WEB_SEARCH":   web_search.execute,
-    "CREATOR":      tech_lead.execute, 
-    "FACTORY":      software_factory.execute, # <-- ESTA LINHA CONECTA A ESTEIRA
-    "BACKUP":       backup_manager.execute,
-    "INSPECTOR":    inspector.execute,
-    "GITHUB":       github_search.execute,
-    "REFACTOR":     refactor.execute,
-    "JAVA_GITOPS":  tech_lead.execute,
-    "CONVERSATION": conversational.respond,
+    "OS_COMMAND":    os_controller.execute,
+    "WEB_SEARCH":    web_search.execute,
+    "CREATOR":       tech_lead.execute,
+    "FACTORY":       software_factory.execute,
+    "BACKUP":        backup_manager.execute,
+    "INSPECTOR":     inspector.execute,
+    "GITHUB":        github_search.execute,
+    "REFACTOR":      refactor.execute,
+    "JAVA_GITOPS":   tech_lead.execute,
+    "CONVERSATION":  conversational.respond,
+    "MEMORY_VAULT":  memory_vault.execute,
 }
 
 async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user_input: str) -> None:
@@ -107,8 +110,25 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user
             effective_input = plan.get("search_query", user_input)
         else:
             skill_name = route(user_input)
-            # Use context-enriched input only for conversational skill
-            effective_input = user_input_with_ctx if skill_name == "CONVERSATION" else user_input
+
+            # RAG semantic memory injection: if the prompt references past context,
+            # retrieve relevant memories and prepend them to the effective input.
+            _rag_context = ""
+            if skill_name not in ("MEMORY_VAULT", "FS_MANAGER", "INSTALL") and should_use_memory(user_input):
+                try:
+                    _rag_context = await asyncio.to_thread(get_relevant_context, user_input)
+                except Exception as _rag_exc:
+                    logger.warning("[MAIN] RAG context retrieval failed: %s", _rag_exc)
+
+            if _rag_context:
+                effective_input = (
+                    f"[SEMANTIC MEMORY CONTEXT]\n{_rag_context}\n\n"
+                    f"[CURRENT MESSAGE]\n{user_input}"
+                )
+            elif skill_name == "CONVERSATION":
+                effective_input = user_input_with_ctx
+            else:
+                effective_input = user_input
 
         try:
             with jarvis_response_time_seconds.labels(skill=skill_name).time():
@@ -345,6 +365,26 @@ def main() -> None:
                 logger.error("[RESILIENCE] Backup cycle exception: %s", exc)
             await asyncio.sleep(_BACKUP_INTERVAL_HOURS * 3600)
 
+    async def _memory_decay_loop():
+        """
+        Autonomous memory decay scheduler.
+        Every MEMORY_DECAY_INTERVAL_HOURS hours, applies importance decay to
+        memories not accessed in 7+ days, and soft-deletes entries that fall
+        below the minimum importance threshold.
+        First cycle is delayed 300 s to allow the system to stabilise.
+        """
+        _DECAY_INTERVAL = int(os.environ.get("MEMORY_DECAY_INTERVAL_HOURS", "6")) * 3600
+        logger.info("[MEMORY_DECAY] Decay scheduler active — interval=%dh", _DECAY_INTERVAL // 3600)
+        await asyncio.sleep(300)
+        while True:
+            try:
+                vs    = get_vector_store()
+                count = await asyncio.to_thread(vs.decay_memories)
+                logger.info("[MEMORY_DECAY] Decay cycle complete — %d memories updated", count)
+            except Exception as exc:
+                logger.error("[MEMORY_DECAY] Decay cycle failed: %s", exc)
+            await asyncio.sleep(_DECAY_INTERVAL)
+
     async def _run_all():
         nonlocal telegram_enabled
         uvi_config = uvicorn.Config(
@@ -371,7 +411,12 @@ def main() -> None:
         perceptor.start(event_loop=loop, bot=bot_instance, chat_id=str(ALLOWED_CHAT_ID) if ALLOWED_CHAT_ID else "API_MODE")
 
         try:
-            await asyncio.gather(uvi_server.serve(), _metrics_loop(), _resilience_loop())
+            await asyncio.gather(
+                uvi_server.serve(),
+                _metrics_loop(),
+                _resilience_loop(),
+                _memory_decay_loop(),
+            )
         finally:
             logger.info("Jarvis desligando...")
             if telegram_enabled and tg_app is not None:
