@@ -17,7 +17,7 @@ from router import route
 from skills import (
     conversational, web_search, creator, fs_manager, backup_manager,
     inspector, github_search, perceptor, refactor, tech_lead, os_controller,
-    software_factory, memory_vault
+    software_factory, memory_vault, jarvis_health, ui_automation, system_status
 )
 from core.memory.retriever import get_relevant_context, should_use_memory
 from core.memory.vector_store import get_vector_store
@@ -69,6 +69,9 @@ SKILL_MAP = {
     "JAVA_GITOPS":   tech_lead.execute,
     "CONVERSATION":  conversational.respond,
     "MEMORY_VAULT":  memory_vault.execute,
+    "JARVIS_HEALTH": jarvis_health.execute,
+    "UI_ACTION":     ui_automation.execute,
+    "SYSTEM_STATUS": system_status.execute,
 }
 
 async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user_input: str) -> None:
@@ -100,35 +103,26 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user
         try: result = fs_manager.execute(user_input, confirm_key=confirm_key)
         except Exception as e: result = f"Erro na confirmacao: {e}"
     else:
-        plan = {}
-        if len(user_input.split()) > 5:
-            try: plan = reason_about(user_input, confirm_key)
-            except: pass
+        skill_name = route(user_input)
 
-        if plan.get("needs_web_search") and not plan.get("needs_os_action"):
-            skill_name = "WEB_SEARCH"
-            effective_input = plan.get("search_query", user_input)
+        # RAG semantic memory injection: if the prompt references past context,
+        # retrieve relevant memories and prepend them to the effective input.
+        _rag_context = ""
+        if skill_name not in ("MEMORY_VAULT", "FS_MANAGER", "INSTALL") and should_use_memory(user_input):
+            try:
+                _rag_context = await asyncio.to_thread(get_relevant_context, user_input)
+            except Exception as _rag_exc:
+                logger.warning("[MAIN] RAG context retrieval failed: %s", _rag_exc)
+
+        if _rag_context:
+            effective_input = (
+                f"[SEMANTIC MEMORY CONTEXT]\n{_rag_context}\n\n"
+                f"[CURRENT MESSAGE]\n{user_input}"
+            )
+        elif skill_name == "CONVERSATION":
+            effective_input = user_input_with_ctx
         else:
-            skill_name = route(user_input)
-
-            # RAG semantic memory injection: if the prompt references past context,
-            # retrieve relevant memories and prepend them to the effective input.
-            _rag_context = ""
-            if skill_name not in ("MEMORY_VAULT", "FS_MANAGER", "INSTALL") and should_use_memory(user_input):
-                try:
-                    _rag_context = await asyncio.to_thread(get_relevant_context, user_input)
-                except Exception as _rag_exc:
-                    logger.warning("[MAIN] RAG context retrieval failed: %s", _rag_exc)
-
-            if _rag_context:
-                effective_input = (
-                    f"[SEMANTIC MEMORY CONTEXT]\n{_rag_context}\n\n"
-                    f"[CURRENT MESSAGE]\n{user_input}"
-                )
-            elif skill_name == "CONVERSATION":
-                effective_input = user_input_with_ctx
-            else:
-                effective_input = user_input
+            effective_input = user_input
 
         try:
             with jarvis_response_time_seconds.labels(skill=skill_name).time():

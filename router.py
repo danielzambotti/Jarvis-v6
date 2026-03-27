@@ -63,20 +63,26 @@ _MEMORY_SAVE_PATTERN = re.compile(
 )
 _MEMORY_RETRIEVE_PATTERN = re.compile(
     r'\b(what\s+do\s+you\s+remember|what\s+do\s+you\s+know\s+about|recall|'
-    r'o\s+que\s+voc[êe]\s+lembra|oq\s+vc\s+lembra|o\s+que\s+sabe\s+sobre)\b',
+    r'o\s+que\s+voc[êe]\s+(?:se\s+)?lembra|oq\s+vc\s+lembra|o\s+que\s+sabe\s+sobre|'
+    r'voc[êe]\s+(?:se\s+)?lembra|vc\s+(?:se\s+)?lembra|'
+    r'lembra\s+(?:da?|do|de)\b|se\s+lembra\s+(?:da?|do|de))\b',
     re.IGNORECASE
 )
-_MEMORY_REVEAL_PATTERN = re.compile(
-    r'\b(reveal|mostrar|exibir|revelar).{0,40}(senha|password|token|credencia[is]|chave|servidor)\b',
-    re.IGNORECASE
-)
+# Intentionally bare — aligns exactly with memory_vault.py _REVEAL_PATTERN.
+# Credential keyword NOT required: "REVEAL github" is a valid command the skill accepts.
+_MEMORY_REVEAL_PATTERN = re.compile(r'\bREVEAL\b', re.IGNORECASE)
 
 def _is_memory_intent(text: str) -> bool:
-    return (
-        bool(_MEMORY_SAVE_PATTERN.search(text)) or
-        bool(_MEMORY_RETRIEVE_PATTERN.search(text)) or
-        bool(_MEMORY_REVEAL_PATTERN.search(text))
-    )
+    if _MEMORY_SAVE_PATTERN.search(text):
+        logger.debug("[ROUTER] Tier-1 MEMORY_VAULT match: SAVE pattern")
+        return True
+    if _MEMORY_RETRIEVE_PATTERN.search(text):
+        logger.debug("[ROUTER] Tier-1 MEMORY_VAULT match: RETRIEVE pattern")
+        return True
+    if _MEMORY_REVEAL_PATTERN.search(text):
+        logger.debug("[ROUTER] Tier-1 MEMORY_VAULT match: REVEAL pattern")
+        return True
+    return False
 
 _UI_KEYWORDS = re.compile(
     r'\b(click|clique?|screenshot|capturar\s+tela|digitar?|type\s+text|'
