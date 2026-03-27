@@ -300,14 +300,26 @@ def _reveal(query: str) -> str:
         return "Could not search memory (embedding generation failed)."
 
     vs      = get_vector_store()
-    results = vs.search_memories(embedding, top_k=3)
+    results = vs.search_memories(embedding, top_k=5)
 
-    # Find the best-matching credential entry
+    # Pass 1: strict threshold — close/exact label match
     target: Optional[dict] = None
     for item in results:
         if "credential" in item.get("tags", []) and item["similarity"] >= 0.6:
             target = item
             break
+
+    # Pass 2: semantic fallback — partial label match (e.g. "senha do servidor"
+    # matching "senha do servidor de testes: [ENCRYPTED VALUE]")
+    if target is None:
+        for item in results:
+            if "credential" in item.get("tags", []) and item["similarity"] >= 0.5:
+                target = item
+                logger.info(
+                    "[VAULT-TRACE] Semantic match found for reveal | similarity=%.3f | label=%s",
+                    item["similarity"], item["content"][:80],
+                )
+                break
 
     if target is None:
         return (
