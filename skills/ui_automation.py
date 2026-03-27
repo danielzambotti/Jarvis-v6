@@ -40,8 +40,10 @@ except ImportError:
 try:
     import pygetwindow as gw
     _PYGETWINDOW_AVAILABLE = True
-except ImportError:
+except (NotImplementedError, ImportError) as e:
+    gw = None
     _PYGETWINDOW_AVAILABLE = False
+    logger.warning("[UI_AUTOMATION] PyGetWindow disabled (Linux/Headless environment): %s", e)
 
 
 # ── Guard function — MUST be defined before any caller ───────────────────────
