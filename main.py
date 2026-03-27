@@ -82,7 +82,15 @@ _BACKUP_INTERVAL_HOURS = int(os.environ.get("BACKUP_INTERVAL_HOURS", "12"))
 _RPO_HOURS             = int(os.environ.get("RPO_HOURS", "72"))
 _BACKUP_STARTUP_DELAY  = 300   # seconds before first backup (let system stabilise)
 
-# ── Skill Dispatch Table ───────────────────────────────────────────────────────
+# ── INSTALL skill wrapper — web search + execution in one synchronous call ───
+def _install_and_search(user_input: str) -> str:
+    """INSTALL: fetch web context first, then execute installation."""
+    from skills import dev_architect
+    search_context = web_search.execute(user_input)
+    return dev_architect.install_and_execute(user_input, search_context)
+
+
+# ── Skill Dispatch Table — ALL 16 skills, single source of truth ─────────────
 SKILL_MAP = {
     "OS_COMMAND":       os_controller.execute,
     "WEB_SEARCH":       web_search.execute,
@@ -90,9 +98,11 @@ SKILL_MAP = {
     "FACTORY":          software_factory.execute,
     "BACKUP":           backup_manager.execute,
     "INSPECTOR":        inspector.execute,
+    "INSTALL":          _install_and_search,
     "GITHUB":           github_search.execute,
     "REFACTOR":         refactor.execute,
     "JAVA_GITOPS":      tech_lead.execute,
+    "FS_MANAGER":       fs_manager.execute,
     "CONVERSATION":     conversational.respond,
     INTENT_MEMORY_VAULT: memory_vault.execute,   # keyed by contract constant
     "JARVIS_HEALTH":    jarvis_health.execute,
@@ -100,11 +110,13 @@ SKILL_MAP = {
     "SYSTEM_STATUS":    system_status.execute,
 }
 
-# ── Hard contract guard — fail fast at startup if MEMORY_VAULT is unmapped ───
-if INTENT_MEMORY_VAULT not in SKILL_MAP:
+# ── Hard contract guard — fail fast at startup if any critical skill is unmapped
+_REQUIRED_SKILLS = {INTENT_MEMORY_VAULT, "FS_MANAGER", "INSTALL", "OS_COMMAND", "CONVERSATION"}
+_missing_skills = _REQUIRED_SKILLS - set(SKILL_MAP.keys())
+if _missing_skills:
     raise RuntimeError(
-        f"CRITICAL: {INTENT_MEMORY_VAULT!r} intent is not mapped in SKILL_MAP — "
-        "dispatcher will silently drop all memory requests"
+        f"CRITICAL: Skills not mapped in SKILL_MAP: {_missing_skills} — "
+        "dispatcher will silently drop requests for these intents"
     )
 
 async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user_input: str) -> None:
@@ -114,88 +126,100 @@ async def _process_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user
     _t = _slogger.start()
     save_message(confirm_key, "user", user_input)
 
-    # ── Memory: store incoming turn & fetch context for injection ─────────────
+    # ── Memory: store incoming turn ────────────────────────────────────────────
     _memory.store_interaction(
         user_id=confirm_key, session_id=confirm_key,
         role="user", content=user_input, tokens=len(user_input.split()),
     )
-    active_ctx = _memory.get_active_context(session_id=confirm_key)
-    # Inject context into user_input for CONVERSATION skill (prepend as digest)
-    if active_ctx:
-        ctx_digest = "\n".join(
-            f"[{m['role'].upper()}]: {m['content'][:200]}"
-            for m in active_ctx[-6:]   # last 6 turns max
-            if m["role"] != "system"
+
+    # ── STEP 1: ROUTE — single authoritative call. NO pre-routing overrides. ───
+    skill_name = route(user_input)
+    logger.info("[DISPATCH-TRACE] intent=%s | input='%s'", skill_name, user_input[:80])
+    if _DEBUG_ROUTING:
+        logger.debug("[DISPATCH-TRACE] Available skills=%s", list(SKILL_MAP.keys()))
+
+    # ── STEP 2: METRIC — increment BEFORE execution (100% coverage). ───────────
+    jarvis_requests_total.labels(skill=skill_name).inc()
+
+    # ── STEP 3: RESOLVE — strict lookup, no silent fallback. ────────────────────
+    skill_fn = SKILL_MAP.get(skill_name)
+    if skill_fn is None:
+        logger.critical(
+            "[DISPATCH-TRACE] UNROUTABLE intent=%s — no handler in SKILL_MAP", skill_name
         )
-        user_input_with_ctx = f"[CONVERSATION HISTORY]\n{ctx_digest}\n\n[CURRENT MESSAGE]\n{user_input}"
-    else:
-        user_input_with_ctx = user_input
+        raise RuntimeError(
+            f"[Zero-Drop] Unroutable intent '{skill_name}' — add it to SKILL_MAP before deploying."
+        )
 
-    if fs_manager.has_pending_confirmation(confirm_key):
-        skill_name = "FS_MANAGER"
-        try: result = fs_manager.execute(user_input, confirm_key=confirm_key)
-        except Exception as e: result = f"Erro na confirmacao: {e}"
-    else:
-        skill_name = route(user_input)
+    # ── STEP 4: PRE-EXECUTION ENRICHMENT (post-route context injection only) ───
+    effective_input = user_input
 
-        logger.info("[DISPATCH-TRACE] Received intent=%s | input='%s'", skill_name, user_input[:80])
-        if _DEBUG_ROUTING:
-            logger.debug("[DISPATCH-TRACE] Available skills=%s", list(SKILL_MAP.keys()))
-
-        # RAG semantic memory injection: if the prompt references past context,
-        # retrieve relevant memories and prepend them to the effective input.
-        _rag_context = ""
-        if skill_name not in (INTENT_MEMORY_VAULT, "FS_MANAGER", "INSTALL") and should_use_memory(user_input):
-            try:
-                _rag_context = await asyncio.to_thread(get_relevant_context, user_input)
-            except Exception as _rag_exc:
-                logger.warning("[MAIN] RAG context retrieval failed: %s", _rag_exc)
-
-        if _rag_context:
-            effective_input = (
-                f"[SEMANTIC MEMORY CONTEXT]\n{_rag_context}\n\n"
-                f"[CURRENT MESSAGE]\n{user_input}"
+    if skill_name == "CONVERSATION":
+        # Conversation history digest injected only for CONVERSATION skill
+        active_ctx = _memory.get_active_context(session_id=confirm_key)
+        if active_ctx:
+            ctx_digest = "\n".join(
+                f"[{m['role'].upper()}]: {m['content'][:200]}"
+                for m in active_ctx[-6:]
+                if m["role"] != "system"
             )
-        elif skill_name == "CONVERSATION":
-            effective_input = user_input_with_ctx
-        else:
-            effective_input = user_input
+            effective_input = f"[CONVERSATION HISTORY]\n{ctx_digest}\n\n[CURRENT MESSAGE]\n{user_input}"
 
+    # RAG semantic memory injection (excluded for vault/fs/install intents)
+    if skill_name not in (INTENT_MEMORY_VAULT, "FS_MANAGER", "INSTALL") and should_use_memory(user_input):
         try:
-            with jarvis_response_time_seconds.labels(skill=skill_name).time():
-                if skill_name == "FS_MANAGER":
-                    result = fs_manager.execute(effective_input, confirm_key=confirm_key)
-                elif skill_name == "INSTALL":
-                    await update.message.reply_text("Pesquisando como instalar... aguarde.")
-                    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-                    search_context = web_search.execute(effective_input)
-                    from skills import dev_architect
-                    await update.message.reply_text("Instruções encontradas. Instalando...")
-                    await context.bot.send_chat_action(chat_id=chat_id, action="typing")
-                    result = dev_architect.install_and_execute(effective_input, search_context)
-                elif skill_name == "GITHUB":
-                    result = github_search.execute(effective_input)
-                elif skill_name == "CONVERSATION":
-                    result = conversational.respond(effective_input, chat_id=confirm_key)
-                else:
-                    if skill_name == INTENT_MEMORY_VAULT:
-                        logger.info("[DISPATCH-TRACE] Executing MEMORY_VAULT skill")
-                    skill_fn = SKILL_MAP.get(skill_name)
-                    if skill_fn is None:
-                        logger.error("[DISPATCH-TRACE] FALLBACK triggered for intent=%s — no handler found", skill_name)
-                        skill_fn = conversational.respond
-                    result = skill_fn(effective_input)
-            jarvis_requests_total.labels(skill=skill_name).inc()
-        except Exception as e:
-            logger.error("[MAIN] skill=%s raised: %s", skill_name, e)
-            result = f"Erro na skill '{skill_name}': {e}"
+            _rag_context = await asyncio.to_thread(get_relevant_context, user_input)
+            if _rag_context:
+                effective_input = (
+                    f"[SEMANTIC MEMORY CONTEXT]\n{_rag_context}\n\n"
+                    f"[CURRENT MESSAGE]\n{effective_input}"
+                )
+        except Exception as _rag_exc:
+            logger.warning("[MAIN] RAG context retrieval failed: %s", _rag_exc)
 
-    if len(result) > 4000: result = result[:4000] + "\n\n…[truncado]"
+    # ── STEP 5: EXECUTE — dispatch via SKILL_MAP; extra kwargs handled here. ───
+    if skill_name == INTENT_MEMORY_VAULT:
+        logger.info("[DISPATCH-TRACE] Executing MEMORY_VAULT skill")
+
+    result = None
+    try:
+        with jarvis_response_time_seconds.labels(skill=skill_name).time():
+            if skill_name == "FS_MANAGER":
+                result = skill_fn(effective_input, confirm_key=confirm_key)
+            elif skill_name == "CONVERSATION":
+                result = skill_fn(effective_input, chat_id=confirm_key)
+            elif skill_name == "INSTALL":
+                await update.message.reply_text("Pesquisando como instalar... aguarde.")
+                await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+                search_context = web_search.execute(effective_input)
+                from skills import dev_architect
+                await update.message.reply_text("Instruções encontradas. Instalando...")
+                await context.bot.send_chat_action(chat_id=chat_id, action="typing")
+                result = dev_architect.install_and_execute(effective_input, search_context)
+            else:
+                result = skill_fn(effective_input)
+    except Exception as e:
+        logger.error("[MAIN] skill=%s raised: %s", skill_name, e)
+        jarvis_requests_total.labels(skill="FALLBACK").inc()
+        result = f"Erro na skill '{skill_name}': {e}"
+
+    # ── STEP 6: ANTI-SILENT-DROP — explicit error on empty result. ───────────────
+    if not result:
+        logger.error(
+            "[DISPATCH-TRACE] ANTI-SILENT-DROP: skill=%s returned empty/None", skill_name
+        )
+        result = (
+            f"ERRO INTERNO: Skill '{skill_name}' retornou resposta vazia. "
+            "Verifique os logs para mais detalhes."
+        )
+
+    # ── STEP 7: POST-PROCESS & SEND ───────────────────────────────────────────────
+    if len(result) > 4000:
+        result = result[:4000] + "\n\n…[truncado]"
     await update.message.reply_text(result)
     save_message(confirm_key, "assistant", result[:500])
     rotate_history(confirm_key)
 
-    # ── Memory: store assistant reply (DLP-sanitised inside store_interaction) ──
     _memory.store_interaction(
         user_id=confirm_key, session_id=confirm_key,
         role="assistant", content=result, tokens=len(result.split()),
