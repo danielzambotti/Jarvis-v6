@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _OLLAMA_HOST    = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
 _EMBED_URL      = f"{_OLLAMA_HOST}/api/embeddings"
-_EMBED_MODEL    = os.environ.get("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+_EMBED_MODEL    = os.environ.get("EMBEDDING_MODEL", os.environ.get("OLLAMA_EMBED_MODEL", "mxbai-embed-large"))
 _REDIS_URL      = os.environ.get("REDIS_URL", "redis://redis:6379/0")
 _REDIS_EMBED_TTL = 86400   # 24h
 _TOP_K          = 5
