@@ -31,3 +31,5 @@ aiohttp
 PyJWT>=2.8.0
 # Phase RAG: Vector memory (ChromaDB)
 chromadb>=0.4.0
+# Phase Security: AES encryption for credential memories
+cryptography>=41.0.0

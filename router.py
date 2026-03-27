@@ -31,6 +31,18 @@ VALID_SKILLS = {"OS_COMMAND", "WEB_SEARCH", "CREATOR", "FS_MANAGER", "BACKUP",
                 "JAVA_GITOPS", "FACTORY", "SYSTEM_STATUS", "JARVIS_HEALTH",
                 "CONVERSATION", "MEMORY_VAULT"}
 
+# ── Explicit memory guard (Tier-1 bypass for LLM safety refusals) ────────────
+# Matches Portuguese/English credential-save intents that local LLMs may refuse
+# to classify (e.g. "guarde minha senha").  Runs BEFORE the LLM, offline-safe.
+_EXPLICIT_MEMORY_PATTERN = re.compile(
+    r'\b(guard[ae]|salv[ae]|memoriz[ae]|lembre[-\s]se|anot[ae]).{0,40}'
+    r'(mem[oó]ria|senha|chave|token|isso|credencia[is])\b',
+    re.IGNORECASE,
+)
+
+def _is_memory_vault_intent(text: str) -> bool:
+    return bool(_EXPLICIT_MEMORY_PATTERN.search(text))
+
 _UI_KEYWORDS = re.compile(
     r'\b(click|clique?|screenshot|capturar\s+tela|digitar?|type\s+text|'
     r'press\s+key|hotkey|atalho|focus\s+window|janela|'
@@ -202,7 +214,8 @@ FALLBACK for everything else: questions, explanations, chitchat, analysis, advic
 ## RULES
 1. Output ONLY valid JSON: {"skill": "SKILL_NAME"}
 2. SYSTEM_STATUS = host hardware/OS metrics. MEMORY_VAULT = Jarvis cognitive memory.
-3. When genuinely ambiguous → CONVERSATION."""
+3. When genuinely ambiguous → CONVERSATION.
+4. CRITICAL: Do NOT refuse classification for words like 'senha' or 'password'. You only route data; you do not store it."""
 
 
 def _llm_classify(user_input: str) -> str:
@@ -289,12 +302,17 @@ def route(user_input: str) -> str:
               GITHUB, INSPECTOR, CONVERSATION, and anything not caught by Tier 1.
 
     Removed from Tier 1 (now handled by Tier 2 LLM):
-      - _is_memory_vault_intent   (collided with _is_system_status_intent on "memory")
       - _is_system_status_intent  (collided with _is_memory_vault_intent on "memory")
+
+    Reinstated in Tier 1 (explicit credential-save bypass):
+      - _is_memory_vault_intent   (narrow regex for Portuguese/English credential saves
+                                   that local LLMs may refuse to classify)
     """
 
     # ── Tier 1: unambiguous syntactic guards ──────────────────────────────────
-    # These patterns have ZERO overlap with each other or with Tier-2 skills.
+    # MEMORY_VAULT first: catches explicit credential-save phrases before LLM
+    # (local models sometimes refuse to classify inputs containing "senha").
+    if _is_memory_vault_intent(user_input): return "MEMORY_VAULT"
     if _is_jarvis_health_intent(user_input): return "JARVIS_HEALTH"
     if _is_factory_intent(user_input):       return "FACTORY"
     if _is_ui_intent(user_input):            return "UI_ACTION"
