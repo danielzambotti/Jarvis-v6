@@ -206,38 +206,75 @@ FALLBACK for everything else: questions, explanations, chitchat, analysis, advic
 
 
 def _llm_classify(user_input: str) -> str:
-    """Send the input to Ollama for semantic classification. Returns a VALID_SKILLS member."""
+    """
+    Send the input to Ollama for semantic classification.
+
+    Reliability strategy:
+      - timeout=60s  : accommodates cold-start latency for local 7B models.
+      - keep_alive=1h: instructs Ollama to keep the model loaded after first use,
+                       eliminating cold-start on subsequent requests.
+      - Retries=2    : ONLY on ConnectionError (server not yet up). ReadTimeout is
+                       NOT retried — if 60 s elapsed and Ollama couldn't respond,
+                       a retry would lock up the UX for another 60 s.
+      - Instant fallback to CONVERSATION on any unrecoverable failure.
+    """
+    import time as _time
+
     payload = {
-        "model":  OLLAMA_MODEL,
-        "prompt": f"Classify this message:\n\n{user_input}",
-        "system": _ROUTER_SYSTEM_PROMPT,
-        "stream": False,
-        "format": "json",           # force Ollama to return valid JSON
+        "model":      OLLAMA_MODEL,
+        "prompt":     f"Classify this message:\n\n{user_input}",
+        "system":     _ROUTER_SYSTEM_PROMPT,
+        "stream":     False,
+        "format":     "json",       # force Ollama to emit valid JSON
+        "keep_alive": "1h",         # keep model hot — eliminates future cold-start
         "options": {
-            "temperature": 0.0,     # deterministic
+            "temperature": 0.0,     # deterministic classification
             "num_predict": 30,
         },
     }
 
-    try:
-        response = requests.post(OLLAMA_URL, json=payload, timeout=15)
-        response.raise_for_status()
-        raw_text = response.json().get("response", "").strip()
-        # Strip markdown fences if the model adds them despite format:json
-        raw_text = re.sub(r"```(?:json)?|```", "", raw_text).strip()
-        parsed   = json.loads(raw_text)
-        skill    = parsed.get("skill", "CONVERSATION").upper().strip()
-        return skill if skill in VALID_SKILLS else "CONVERSATION"
+    _MAX_ATTEMPTS = 2
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        t0 = _time.monotonic()
+        try:
+            response = requests.post(OLLAMA_URL, json=payload, timeout=60)
+            response.raise_for_status()
+            elapsed  = _time.monotonic() - t0
+            raw_text = response.json().get("response", "").strip()
+            # Strip markdown fences if the model adds them despite format:json
+            raw_text = re.sub(r"```(?:json)?|```", "", raw_text).strip()
+            parsed   = json.loads(raw_text)
+            skill    = parsed.get("skill", "CONVERSATION").upper().strip()
+            logger.debug("[ROUTER] LLM classified '%s…' → %s (%.2fs, attempt %d)",
+                         user_input[:40], skill, elapsed, attempt)
+            return skill if skill in VALID_SKILLS else "CONVERSATION"
 
-    except requests.exceptions.ConnectionError:
-        logger.error("[ROUTER] Ollama is not running at %s", OLLAMA_URL)
-        return "CONVERSATION"
-    except (json.JSONDecodeError, KeyError) as exc:
-        logger.warning("[ROUTER] LLM returned unparseable response: %s", exc)
-        return "CONVERSATION"
-    except Exception as exc:
-        logger.error("[ROUTER] Unexpected error during LLM classification: %s", exc)
-        return "CONVERSATION"
+        except requests.exceptions.ReadTimeout:
+            # 60 s elapsed — model is not responding. Retrying would hurt UX.
+            elapsed = _time.monotonic() - t0
+            logger.error("[ROUTER] LLM ReadTimeout after %.1fs — falling back to CONVERSATION", elapsed)
+            return "CONVERSATION"
+
+        except requests.exceptions.ConnectionError as exc:
+            # Ollama process not yet listening (race at startup). Retry once.
+            elapsed = _time.monotonic() - t0
+            if attempt < _MAX_ATTEMPTS:
+                logger.warning("[ROUTER] ConnectionError (attempt %d/%d, %.1fs) — retrying in 2s: %s",
+                               attempt, _MAX_ATTEMPTS, elapsed, exc)
+                _time.sleep(2)
+            else:
+                logger.error("[ROUTER] Ollama unreachable after %d attempts — falling back", _MAX_ATTEMPTS)
+                return "CONVERSATION"
+
+        except (json.JSONDecodeError, KeyError) as exc:
+            logger.warning("[ROUTER] LLM returned unparseable response: %s", exc)
+            return "CONVERSATION"
+
+        except Exception as exc:
+            logger.error("[ROUTER] Unexpected error during LLM classification: %s", exc)
+            return "CONVERSATION"
+
+    return "CONVERSATION"  # unreachable; satisfies type checkers
 
 
 def route(user_input: str) -> str:
