@@ -13,9 +13,10 @@ uvicorn
 psutil
 watchdog
 # Phase 4: UI Automation / RPA
-pyautogui
+pyautogui==0.9.54
 pygetwindow
-pillow
+Pillow==10.2.0
+python-xlib==0.33
 # Phase 9: Document security
 pdfplumber
 pypdf

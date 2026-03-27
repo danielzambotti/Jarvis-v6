@@ -58,10 +58,14 @@ RUN groupadd -r jarvis --gid=1000 && \
     chown -R jarvis:jarvis /app
 
 # Runtime dependencies — full headless GUI stack for pyautogui stability
+# NOTE: docker.io CLI uses DOCKER_HOST=tcp://dockerproxy:2375 (set in compose).
+# If direct socket access is ever needed, the jarvis user must be added to the
+# docker group (gid matching the host) or the socket mounted with group write.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-tk \
     scrot \
     x11-utils \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libx11-6 \
@@ -85,8 +89,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
     curl \
     procps \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+    git \
+    docker.io \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy installed packages from builder stage
 COPY --from=builder /install /usr/local
