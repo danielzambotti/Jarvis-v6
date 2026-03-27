@@ -20,12 +20,14 @@ from core.security.iam import UserPrincipal, require_role
 
 # ── Importações do Cérebro (Configuração de Path) ─────────────────────────────
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from router import route
+from router import route, INTENT_MEMORY_VAULT, _DEBUG_ROUTING
 from skills import (
     conversational, os_controller, web_search, creator, fs_manager,
     backup_manager, inspector, github_search, refactor, java_gitops,
-    system_status, jarvis_health
+    system_status, jarvis_health,
+    memory_vault, tech_lead, software_factory, ui_automation,
 )
+from core.metrics import jarvis_requests_total
 
 logger = logging.getLogger(__name__)
 
@@ -112,10 +114,37 @@ async def health_check():
             content={"status": "error", "message": str(e)}
         )
 
-# FIX 4: Criar a classe que mapeia o JSON do Baymax
 class ExecuteRequest(BaseModel):
     message: str
     user_id: str = "api_baymax"
+
+# ── Web API Skill Dispatch Table — must stay in sync with main.py SKILL_MAP ──
+# Defined at module level: built once, not on every request.
+# CREATOR and JAVA_GITOPS intentionally use tech_lead (aligned with main.py).
+_WEB_SKILL_MAP = {
+    "OS_COMMAND":       os_controller.execute,
+    "WEB_SEARCH":       web_search.execute,
+    "CREATOR":          tech_lead.execute,
+    "FACTORY":          software_factory.execute,
+    "BACKUP":           backup_manager.execute,
+    "INSPECTOR":        inspector.execute,
+    "GITHUB":           github_search.execute,
+    "REFACTOR":         refactor.execute,
+    "JAVA_GITOPS":      tech_lead.execute,
+    "CONVERSATION":     conversational.respond,
+    INTENT_MEMORY_VAULT: memory_vault.execute,   # keyed by contract constant
+    "JARVIS_HEALTH":    jarvis_health.execute,
+    "UI_ACTION":        ui_automation.execute,
+    "SYSTEM_STATUS":    system_status.execute,
+}
+
+# Hard contract guard — fail fast at startup if MEMORY_VAULT is unmapped
+if INTENT_MEMORY_VAULT not in _WEB_SKILL_MAP:
+    raise RuntimeError(
+        f"CRITICAL: {INTENT_MEMORY_VAULT!r} not mapped in web_ui _WEB_SKILL_MAP — "
+        "web API will silently drop all memory requests"
+    )
+
 
 @app.post("/api/v1/execute")
 async def execute_command(
@@ -124,27 +153,29 @@ async def execute_command(
 ):
     msg = req.message
     uid = caller.user_id  # use the verified identity, not the self-reported req.user_id
-    
+
     skill_name = route(msg)
+    logger.info("[DISPATCH-TRACE] Received intent=%s | input='%s'", skill_name, msg[:80])
+    if _DEBUG_ROUTING:
+        logger.debug("[DISPATCH-TRACE] Available skills=%s", list(_WEB_SKILL_MAP.keys()))
+
     try:
         if skill_name == "FS_MANAGER":
             res = fs_manager.execute(msg, confirm_key=uid)
         elif skill_name == "CONVERSATION":
             res = conversational.respond(msg, chat_id=uid)
         else:
-            # Mapeamento dinâmico das skills
-            skills_map = {
-                "OS_COMMAND": os_controller.execute, "WEB_SEARCH": web_search.execute,
-                "CREATOR": creator.execute, "BACKUP": backup_manager.execute,
-                "INSPECTOR": inspector.execute, "GITHUB": github_search.execute,
-                "REFACTOR": refactor.execute, "JAVA_GITOPS": java_gitops.execute,
-                "SYSTEM_STATUS": system_status.execute,
-                "JARVIS_HEALTH": jarvis_health.execute,
-            }
-            fn = skills_map.get(skill_name, conversational.respond)
+            if skill_name == INTENT_MEMORY_VAULT:
+                logger.info("[DISPATCH-TRACE] Executing MEMORY_VAULT skill")
+            fn = _WEB_SKILL_MAP.get(skill_name)
+            if fn is None:
+                logger.error("[DISPATCH-TRACE] FALLBACK triggered for intent=%s — no handler found", skill_name)
+                fn = conversational.respond
             res = fn(msg)
+
+        jarvis_requests_total.labels(skill=skill_name).inc()
     except Exception as e:
         logger.exception("[API] Unhandled exception in skill '%s' for user '%s'", skill_name, uid)
         res = f"❌ Skill Execution Failed: {type(e).__name__} — {e}"
-    
+
     return {"intent": skill_name, "response": res}
