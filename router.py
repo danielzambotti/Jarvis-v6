@@ -8,7 +8,11 @@ import re
 import threading
 import requests
 from config import OLLAMA_MODEL
-from core.metrics import jarvis_router_latency_seconds, jarvis_router_fallbacks_total
+from core.metrics import (
+    jarvis_router_latency_seconds,
+    jarvis_router_fallbacks_total,
+    jarvis_router_tier1_hits_total,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +144,13 @@ _FS_ACTION = re.compile(r'\b(cri[ae]r?|make|new|nova?|novo?|criar?|show|ver |lis
 def _is_fs_intent(text: str) -> bool:
     return bool(_FS_KEYWORDS.search(text) and _FS_ACTION.search(text))
 
+_WEB_SEARCH_KEYWORDS = re.compile(
+    r'\b(pesquise|procure|busque|na\s+internet|search|look\s+up|google|check\s+price)\b',
+    re.IGNORECASE,
+)
+def _is_web_search_intent(text: str) -> bool:
+    return bool(_WEB_SEARCH_KEYWORDS.search(text))
+
 _INSPECTOR_KEYWORDS = re.compile(
     r'\b(analise?|analisa|analyse?|inspect|inspecion[ae]|review|revise?|read your|leia o|leia seu|ler o|ler seu|'
     r'how (do|does) (you|jarvis) work|como (você|voce) funciona|show (me )?your code|mostre? (seu|o) c[oó]digo|'
@@ -157,10 +168,13 @@ def _is_factory_intent(text: str) -> bool:
     return bool(_FACTORY_KEYWORDS.search(text))
 
 _JARVIS_HEALTH_KEYWORDS = re.compile(
-    r'\b(jarvis\s*health|health\s*check|saúde\s*do\s*jarvis|diagnóstico\s*do\s*jarvis|'
+    r'\b(jarvis\s*health|health\s*check|sa[uú]de\s*do\s*jarvis|diagn[oó]stico\s*do\s*jarvis|'
     r'jarvis\s*status|jarvis\s*ok|is\s*jarvis\s*(ok|running|up)|'
     r'infrastructure\s*health|infra\s*status|check\s*services|'
-    r'redis\s*(ok|status|up)|postgres\s*(ok|status|up)|ollama\s*(ok|status|up))\b',
+    r'redis\s*(ok|status|up)|postgres\s*(ok|status|up)|ollama\s*(ok|status|up)|'
+    # Bilingual additions
+    r'ver\s+sa[uú]de|sa[uú]de\s+do\s+sistema|integridade\s+do\s+sistema|'
+    r'system\s+status|uptime|check\s+status)\b',
     re.IGNORECASE,
 )
 def _is_jarvis_health_intent(text: str) -> bool:
@@ -367,39 +381,56 @@ def route(user_input: str) -> str:
       - _is_memory_intent   (covers save, retrieval, and REVEAL — offline-safe)
     """
 
-    # ── Tier 1: Unambiguous syntactic guards ──────────────────────────────────
+    # ── Tier 1: Unambiguous syntactic guards (0ms latency, no LLM) ──────────────
     if _is_memory_intent(user_input):
+        jarvis_router_tier1_hits_total.labels(intent="MEMORY_VAULT").inc()
         logger.info("[ROUTER-TRACE] Tier1 MATCH → MEMORY_VAULT | input='%s'", user_input[:80])
         return INTENT_MEMORY_VAULT
     if _is_jarvis_health_intent(user_input):
+        jarvis_router_tier1_hits_total.labels(intent="JARVIS_HEALTH").inc()
         if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → JARVIS_HEALTH | input='%s'", user_input[:80])
         return "JARVIS_HEALTH"
     if _is_factory_intent(user_input):
+        jarvis_router_tier1_hits_total.labels(intent="FACTORY").inc()
         if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → FACTORY | input='%s'", user_input[:80])
         return "FACTORY"
     if _is_ui_intent(user_input):
+        jarvis_router_tier1_hits_total.labels(intent="UI_ACTION").inc()
         if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → UI_ACTION | input='%s'", user_input[:80])
         return "UI_ACTION"
     if _is_java_gitops_intent(user_input):
+        jarvis_router_tier1_hits_total.labels(intent="JAVA_GITOPS").inc()
         if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → JAVA_GITOPS | input='%s'", user_input[:80])
         return "JAVA_GITOPS"
     if _is_refactor_intent(user_input):
+        jarvis_router_tier1_hits_total.labels(intent="REFACTOR").inc()
         if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → REFACTOR | input='%s'", user_input[:80])
         return "REFACTOR"
     if _is_install_intent(user_input):
+        # NOTE: checked before WEB_SEARCH — install is more specific (needs both keywords)
+        jarvis_router_tier1_hits_total.labels(intent="INSTALL").inc()
         if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → INSTALL | input='%s'", user_input[:80])
         return "INSTALL"
     if _is_backup_intent(user_input):
+        jarvis_router_tier1_hits_total.labels(intent="BACKUP").inc()
         if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → BACKUP | input='%s'", user_input[:80])
         return "BACKUP"
     if _is_fs_intent(user_input):
+        jarvis_router_tier1_hits_total.labels(intent="FS_MANAGER").inc()
         if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → FS_MANAGER | input='%s'", user_input[:80])
         return "FS_MANAGER"
     if _is_creator_intent(user_input):
+        jarvis_router_tier1_hits_total.labels(intent="CREATOR").inc()
         if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → CREATOR | input='%s'", user_input[:80])
         return "CREATOR"
+    if _is_web_search_intent(user_input):
+        # Placed last in Tier-1 — broad terms (search, procure) only fire after
+        # more-specific intents (INSTALL, FS, CREATOR) have been ruled out.
+        jarvis_router_tier1_hits_total.labels(intent="WEB_SEARCH").inc()
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → WEB_SEARCH | input='%s'", user_input[:80])
+        return "WEB_SEARCH"
 
     # ── Tier 2: LLM semantic classifier ──────────────────────────────────────
-    # Handles: SYSTEM_STATUS, MEMORY_VAULT, OS_COMMAND, WEB_SEARCH, GITHUB,
-    #          INSPECTOR, JAVA_GITOPS (edge cases), CONVERSATION, and all else.
+    # Handles: SYSTEM_STATUS, OS_COMMAND, GITHUB, INSPECTOR, JAVA_GITOPS (edge
+    # cases), CONVERSATION, and anything not caught by Tier-1 regex guards.
     return _llm_classify(user_input)

@@ -125,6 +125,22 @@ jarvis_router_fallbacks_total = Counter(
 )
 
 
+# ── Tier-1 Router Hit Metrics ─────────────────────────────────────────────────
+
+jarvis_router_tier1_hits_total = Counter(
+    "jarvis_router_tier1_hits_total",
+    "Total Tier-1 regex routing hits that bypassed LLM classification, partitioned by intent.",
+    ["intent"],
+)
+
+# ── Skill Failure Metrics ─────────────────────────────────────────────────────
+
+jarvis_skill_failures_total = Counter(
+    "jarvis_skill_failures_total",
+    "Total skill execution failures (caught exceptions), partitioned by skill name.",
+    ["skill"],
+)
+
 # ── Server bootstrap ───────────────────────────────────────────────────────────
 
 def start_metrics_server(port: int = 8000) -> None:

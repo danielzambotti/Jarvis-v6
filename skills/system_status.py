@@ -9,6 +9,7 @@ import subprocess
 import time
 
 import psutil
+from core.metrics import jarvis_skill_failures_total
 
 logger = logging.getLogger(__name__)
 
@@ -72,18 +73,32 @@ def execute(user_input: str = "") -> str:
         if result.returncode == 0 and result.stdout.strip():
             lines.append("\n**Docker Containers:**")
             for row in result.stdout.strip().splitlines():
-                parts = row.split("\t")
+                parts  = row.split("\t")
                 name   = parts[0] if len(parts) > 0 else "?"
                 status = parts[1] if len(parts) > 1 else "?"
                 image  = parts[2] if len(parts) > 2 else "?"
-                icon = "🟢" if "Up" in status else "🔴"
+                icon   = "🟢" if "Up" in status else "🔴"
                 lines.append(f"  {icon} `{name}` — {status} ({image})")
+        elif result.returncode != 0:
+            stderr_lower = (result.stderr or "").lower()
+            if any(kw in stderr_lower for kw in ("socket", "daemon", "connect", "unix://")):
+                lines.append(
+                    "\n**Docker:** Monitoramento Docker indisponível (Socket não montado)."
+                )
+            else:
+                lines.append(f"\n**Docker:** erro — {result.stderr.strip()[:200]}")
+            jarvis_skill_failures_total.labels(skill="SYSTEM_STATUS").inc()
         else:
-            lines.append("\n**Docker:** no containers found or docker CLI unavailable")
+            lines.append("\n**Docker:** no containers running")
     except FileNotFoundError:
         lines.append("\n**Docker:** CLI not found in PATH")
+        jarvis_skill_failures_total.labels(skill="SYSTEM_STATUS").inc()
+    except subprocess.TimeoutExpired:
+        lines.append("\n**Docker:** timeout consultando containers (>5s)")
+        jarvis_skill_failures_total.labels(skill="SYSTEM_STATUS").inc()
     except Exception as e:
         lines.append(f"\n**Docker:** error — {e}")
+        jarvis_skill_failures_total.labels(skill="SYSTEM_STATUS").inc()
 
     lines.append(f"\n*Snapshot at {time.strftime('%H:%M:%S')} UTC*")
     return "\n".join(lines)

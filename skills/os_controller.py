@@ -33,6 +33,7 @@ import subprocess
 import requests
 from security import is_safe_command
 from config import OLLAMA_URL, OLLAMA_MODEL
+from core.metrics import jarvis_skill_failures_total
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +56,16 @@ def _ask_for_fix(original_cmd: str, stderr: str) -> str:
         "options": {"temperature": 0.0, "num_predict": 80},
     }
     try:
-        r = requests.post(OLLAMA_URL, json=payload, timeout=15)
+        r = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        if r.status_code != 200:
+            logger.error("[HEAL] Non-200 response: status=%d body=%s", r.status_code, r.text[:300])
+            return "CANNOT_FIX"
         fix = r.json().get("response", "").strip().splitlines()[0].strip()
         logger.info("[HEAL] Suggested fix: %s", fix[:150])
         return fix
     except Exception as e:
         logger.error("[HEAL] Fix request failed: %s", e)
+        jarvis_skill_failures_total.labels(skill="OS_COMMAND").inc()
         return "CANNOT_FIX"
 
 # ── Output post-processor: convert raw bytes to human-readable units ──────────
@@ -286,8 +291,11 @@ def _translate_to_command(natural_language: str) -> str:
         "options": {"temperature": 0.0, "num_predict": 80},
     }
     try:
-        r = requests.post(OLLAMA_URL, json=payload, timeout=20)
-        r.raise_for_status()
+        r = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        if r.status_code != 200:
+            logger.error("[OS_CTRL] Non-200 from Ollama: status=%d body=%s",
+                         r.status_code, r.text[:300])
+            return "UNSAFE_REQUEST"
         cmd = r.json().get("response", "").strip()
         # Strip accidental markdown fences
         cmd = re.sub(r"```[a-z]*\n?", "", cmd).replace("```", "").strip()
@@ -297,9 +305,11 @@ def _translate_to_command(natural_language: str) -> str:
         return cmd
     except requests.exceptions.ConnectionError:
         logger.error("[OS_CTRL] Ollama not reachable.")
+        jarvis_skill_failures_total.labels(skill="OS_COMMAND").inc()
         return "UNSAFE_REQUEST"
     except Exception as e:
         logger.error("[OS_CTRL] Translation error: %s", e)
+        jarvis_skill_failures_total.labels(skill="OS_COMMAND").inc()
         return "UNSAFE_REQUEST"
 
 
@@ -407,14 +417,17 @@ def execute(user_input: str) -> str:
                 break
 
         except subprocess.TimeoutExpired:
+            jarvis_skill_failures_total.labels(skill="OS_COMMAND").inc()
             return (
                 f"Timeout apos 60s: `{current_cmd}`\n"
                 "Comando abortado por seguranca — nenhuma alteracao foi feita."
             )
         except FileNotFoundError:
+            jarvis_skill_failures_total.labels(skill="OS_COMMAND").inc()
             return "PowerShell nao encontrado."
         except Exception as e:
             logger.error("[OS_CTRL] Subprocess error: %s", e)
+            jarvis_skill_failures_total.labels(skill="OS_COMMAND").inc()
             return f"Erro: {e}"
 
     # All retries exhausted — report root cause

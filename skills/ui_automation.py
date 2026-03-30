@@ -23,6 +23,7 @@ import re
 import subprocess
 import time
 from pathlib import Path
+from core.metrics import jarvis_skill_failures_total
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +133,7 @@ def _calc_gui(expression: str) -> str:
 
 # ── Core automation primitives ────────────────────────────────────────────────
 def take_screenshot(label: str = "ui_action") -> str:
-    """Capture full desktop screenshot. Returns path or empty string."""
+    """Capture full desktop screenshot. Returns path on success, empty string on failure."""
     if not _require_pyautogui():
         return ""
     ws = Path(__file__).parent.parent / "workspace"
@@ -143,7 +144,8 @@ def take_screenshot(label: str = "ui_action") -> str:
         logger.info("[UI] Screenshot saved: %s", out)
         return out
     except Exception as e:
-        logger.error("[UI] Screenshot failed: %s", e)
+        logger.error("[UI-AUTO] Screenshot failed: %s", e)
+        jarvis_skill_failures_total.labels(skill="UI_ACTION").inc()
         return ""
 
 
@@ -244,7 +246,7 @@ def execute(user_input: str) -> str:
     # ── Screenshot ───────────────────────────────────────────────────────────
     if "screenshot" in text or "capturar tela" in text or "printscreen" in text:
         path = take_screenshot("manual")
-        return f"Screenshot salvo: `{path}`" if path else "Falha ao capturar screenshot."
+        return f"Screenshot salvo: `{path}`" if path else "Falha ao capturar tela."
 
     # ── Focus / activate window ───────────────────────────────────────────────
     m = re.search(r'(?:focus|ativar?|activate|janela|window)\s+(.+)', text)
