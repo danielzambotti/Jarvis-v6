@@ -61,7 +61,7 @@ RUN groupadd -r jarvis --gid=1000 && \
 # NOTE: docker.io CLI uses DOCKER_HOST=tcp://dockerproxy:2375 (set in compose).
 # If direct socket access is ever needed, the jarvis user must be added to the
 # docker group (gid matching the host) or the socket mounted with group write.
-RUN echo "Cache bust 2026-03-30-v2" && \
+RUN echo "Cache bust 2026-03-30-v3" && \
     apt-get update && apt-get install -y --no-install-recommends \
     python3-tk \
     scrot \
