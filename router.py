@@ -96,8 +96,9 @@ def _is_memory_intent(text: str) -> bool:
     return False
 
 _UI_KEYWORDS = re.compile(
-    r'\b(click|clique?|screenshot|capturar\s+tela|digitar?|type\s+text|'
-    r'press\s+key|hotkey|atalho|focus\s+window|janela|'
+    r'\b(click|clique?|screenshot|printscreen|capturar\s+tela|'
+    r'tire\s+(?:um\s+)?print|tirar\s+(?:um\s+)?print|capture\s+screen|'
+    r'digitar?|type\s+text|press\s+key|hotkey|atalho|focus\s+window|janela|'
     r'abrir?\s+(?:o\s+)?(?:app|aplicativo|programa)|ui\s+action)\b',
     re.IGNORECASE,
 )
@@ -396,7 +397,7 @@ def route(user_input: str) -> str:
         return "FACTORY"
     if _is_ui_intent(user_input):
         jarvis_router_tier1_hits_total.labels(intent="UI_ACTION").inc()
-        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → UI_ACTION | input='%s'", user_input[:80])
+        logger.info("[ROUTER-TRACE] Tier1 UI_ACTION matched! input='%s'", user_input[:80])
         return "UI_ACTION"
     if _is_java_gitops_intent(user_input):
         jarvis_router_tier1_hits_total.labels(intent="JAVA_GITOPS").inc()

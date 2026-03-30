@@ -82,9 +82,7 @@ def execute(user_input: str = "") -> str:
         elif result.returncode != 0:
             stderr_lower = (result.stderr or "").lower()
             if any(kw in stderr_lower for kw in ("socket", "daemon", "connect", "unix://")):
-                lines.append(
-                    "\n**Docker:** Monitoramento Docker indisponível (Socket não montado)."
-                )
+                lines.append("\n**Docker:** Docker não disponível no ambiente.")
             else:
                 lines.append(f"\n**Docker:** erro — {result.stderr.strip()[:200]}")
             jarvis_skill_failures_total.labels(skill="SYSTEM_STATUS").inc()

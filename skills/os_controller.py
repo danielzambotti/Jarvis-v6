@@ -32,8 +32,14 @@ import re
 import subprocess
 import requests
 from security import is_safe_command
-from config import OLLAMA_URL, OLLAMA_MODEL
+from config import OLLAMA_MODEL
 from core.metrics import jarvis_skill_failures_total
+
+# Build the generate URL directly from OLLAMA_HOST to avoid vault env-var override
+# that may set OLLAMA_URL to the bare host without the /api/generate path suffix.
+# (Mirrors the pattern used by conversational.py for /api/chat.)
+_OLLAMA_BASE         = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
+_OLLAMA_GENERATE_URL = _OLLAMA_BASE + "/api/generate"
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +62,8 @@ def _ask_for_fix(original_cmd: str, stderr: str) -> str:
         "options": {"temperature": 0.0, "num_predict": 80},
     }
     try:
-        r = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        logger.info("[OS_CTRL] Calling Ollama endpoint: %s", _OLLAMA_GENERATE_URL)
+        r = requests.post(_OLLAMA_GENERATE_URL, json=payload, timeout=60)
         if r.status_code != 200:
             logger.error("[HEAL] Non-200 response: status=%d body=%s", r.status_code, r.text[:300])
             return "CANNOT_FIX"
@@ -291,7 +298,8 @@ def _translate_to_command(natural_language: str) -> str:
         "options": {"temperature": 0.0, "num_predict": 80},
     }
     try:
-        r = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        logger.info("[OS_CTRL] Calling Ollama endpoint: %s", _OLLAMA_GENERATE_URL)
+        r = requests.post(_OLLAMA_GENERATE_URL, json=payload, timeout=60)
         if r.status_code != 200:
             logger.error("[OS_CTRL] Non-200 from Ollama: status=%d body=%s",
                          r.status_code, r.text[:300])

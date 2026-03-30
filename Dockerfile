@@ -94,6 +94,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
+# Build-time verification: fail fast if docker binary is missing
+RUN which docker || (echo "Docker CLI missing from PATH!" && exit 1)
+
 # Copy installed packages from builder stage
 COPY --from=builder /install /usr/local
 
@@ -105,11 +108,15 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     DISPLAY=:99 \
     OLLAMA_HOST=http://ollama:11434 \
-    TZ=America/Sao_Paulo
+    TZ=America/Sao_Paulo \
+    PATH="/usr/bin:/usr/local/bin:${PATH}"
 
 # Health check endpoint
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8765/health || exit 1
+
+# Add jarvis to docker group so docker CLI can reach the mounted socket
+RUN usermod -aG docker jarvis || true
 
 # Switch to non-root user
 USER jarvis
