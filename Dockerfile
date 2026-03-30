@@ -57,46 +57,26 @@ RUN groupadd -r jarvis --gid=1000 && \
     mkdir -p /app/workspace /app/backups /app/logs /app/memory /app/ollama_data && \
     chown -R jarvis:jarvis /app
 
-# Runtime dependencies — full headless GUI stack for pyautogui stability
-# NOTE: docker.io CLI uses DOCKER_HOST=tcp://dockerproxy:2375 (set in compose).
-# If direct socket access is ever needed, the jarvis user must be added to the
-# docker group (gid matching the host) or the socket mounted with group write.
-RUN echo "Cache bust 2026-03-30-v3" && \
+# Runtime dependencies + static Docker CLI (no daemon, architecture-aware)
+RUN echo "Cache bust 2026-03-30-v4" && \
     apt-get update && apt-get install -y --no-install-recommends \
-    python3-tk \
-    scrot \
-    x11-utils \
-    libgl1 \
-    libglib2.0-0 \
-    libsm6 \
-    libx11-6 \
-    libxext6 \
-    libxrender1 \
-    libxtst6 \
-    libxi6 \
-    libxrandr2 \
-    libxcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libnss3 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libgbm1 \
-    libasound2 \
-    ffmpeg \
+    python3 \
     xvfb \
+    x11-utils \
+    scrot \
+    libgl1 \
+    libxext6 \
     curl \
-    procps \
-    git \
-    docker.io \
+    ca-certificates \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Build-time verification: fail fast if docker binary is missing
-RUN docker --version || (echo "Docker CLI missing!" && exit 1)
+    && rm -rf /var/lib/apt/lists/* \
+    && ARCH=$(uname -m) \
+    && if [ "$ARCH" = "arm64" ]; then ARCH="aarch64"; fi \
+    && curl -fsSL "https://download.docker.com/linux/static/stable/${ARCH}/docker-25.0.3.tgz" -o docker.tgz \
+    && tar -xzf docker.tgz --strip-components=1 -C /usr/local/bin docker/docker \
+    && rm docker.tgz \
+    && chmod +x /usr/local/bin/docker \
+    && docker --version
 
 # Copy installed packages from builder stage
 COPY --from=builder /install /usr/local
