@@ -152,6 +152,18 @@ _WEB_SEARCH_KEYWORDS = re.compile(
 def _is_web_search_intent(text: str) -> bool:
     return bool(_WEB_SEARCH_KEYWORDS.search(text))
 
+# NOTE: Generic PT question words (qual/como/quem/onde/quando) are intentionally
+# NOT in Tier-1 — they are too ambiguous standalone and cause cross-intent collisions
+# (JARVIS_HEALTH, INSPECTOR, SYSTEM_STATUS). They are handled correctly by Tier-2 LLM.
+
+_CONVERSATIONAL_KEYWORDS = re.compile(
+    r'^(ol[aá]|oi|bom\s+dia|boa\s+tarde|boa\s+noite)\b|'
+    r'\b(quem\s+[eé]\s+voc[eê]|o\s+que\s+voc[eê]\s+pode\s+fazer|me\s+ajuda|tudo\s+bem|como\s+vai)\b',
+    re.IGNORECASE,
+)
+def _is_conversational_intent(text: str) -> bool:
+    return bool(_CONVERSATIONAL_KEYWORDS.search(text))
+
 _INSPECTOR_KEYWORDS = re.compile(
     r'\b(analise?|analisa|analyse?|inspect|inspecion[ae]|review|revise?|read your|leia o|leia seu|ler o|ler seu|'
     r'how (do|does) (you|jarvis) work|como (você|voce) funciona|show (me )?your code|mostre? (seu|o) c[oó]digo|'
@@ -430,6 +442,12 @@ def route(user_input: str) -> str:
         jarvis_router_tier1_hits_total.labels(intent="WEB_SEARCH").inc()
         if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → WEB_SEARCH | input='%s'", user_input[:80])
         return "WEB_SEARCH"
+    if _is_conversational_intent(user_input):
+        # Greetings and introductory phrases — zero overlap with skills.
+        # Placed last so all actionable intents take priority.
+        jarvis_router_tier1_hits_total.labels(intent="CONVERSATION").inc()
+        if _DEBUG_ROUTING: logger.debug("[ROUTER-TRACE] Tier1 MATCH → CONVERSATION | input='%s'", user_input[:80])
+        return "CONVERSATION"
 
     # ── Tier 2: LLM semantic classifier ──────────────────────────────────────
     # Handles: SYSTEM_STATUS, OS_COMMAND, GITHUB, INSPECTOR, JAVA_GITOPS (edge

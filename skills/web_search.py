@@ -14,6 +14,7 @@ TWO-PHASE SEARCH with fallback:
 """
 
 import logging
+import os
 import requests
 
 # Use the modern `ddgs` package (v9+). The old `duckduckgo_search` package
@@ -24,7 +25,12 @@ try:
 except ImportError:
     from duckduckgo_search import DDGS   # fallback for older installs
 
-from config import OLLAMA_URL, OLLAMA_MODEL
+from config import OLLAMA_MODEL
+
+# Build URL from OLLAMA_HOST directly — same pattern as os_controller.py.
+# Avoids vault/env-var override that may return a bare host without the path suffix.
+_OLLAMA_BASE         = os.environ.get("OLLAMA_HOST", "http://ollama:11434")
+_OLLAMA_GENERATE_URL = _OLLAMA_BASE + "/api/generate"
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +51,7 @@ def _extract_query(prompt: str) -> str:
         "options": {"temperature": 0.0, "num_predict": 30},
     }
     try:
-        r = requests.post(OLLAMA_URL, json=payload, timeout=10)
+        r = requests.post(_OLLAMA_GENERATE_URL, json=payload, timeout=10)
         q = r.json().get("response", "").strip().strip("'\"")
         return q if q else prompt
     except Exception:
@@ -83,7 +89,7 @@ def _summarise(prompt: str, context: str) -> str:
         "options": {"temperature": 0.4, "num_predict": 512},
     }
     try:
-        r = requests.post(OLLAMA_URL, json=payload, timeout=60)
+        r = requests.post(_OLLAMA_GENERATE_URL, json=payload, timeout=60)
         return r.json().get("response", "").strip()
     except Exception:
         return "Encontrei os resultados mas não consegui resumir. Tente novamente."
