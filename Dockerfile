@@ -61,7 +61,8 @@ RUN groupadd -r jarvis --gid=1000 && \
 # NOTE: docker.io CLI uses DOCKER_HOST=tcp://dockerproxy:2375 (set in compose).
 # If direct socket access is ever needed, the jarvis user must be added to the
 # docker group (gid matching the host) or the socket mounted with group write.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN echo "Cache bust 2026-03-30-v2" && \
+    apt-get update && apt-get install -y --no-install-recommends \
     python3-tk \
     scrot \
     x11-utils \
@@ -95,7 +96,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Build-time verification: fail fast if docker binary is missing
-RUN which docker || (echo "Docker CLI missing from PATH!" && exit 1)
+RUN which docker || (echo "Docker CLI missing!" && exit 1)
 
 # Copy installed packages from builder stage
 COPY --from=builder /install /usr/local
