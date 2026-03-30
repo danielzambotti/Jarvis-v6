@@ -58,9 +58,11 @@ RUN groupadd -r jarvis --gid=1000 && \
     chown -R jarvis:jarvis /app
 
 # Runtime dependencies + static Docker CLI (no daemon, architecture-aware)
-RUN echo "Cache bust 2026-03-30-v5" && \
+RUN echo "Cache bust 2026-03-30-v6" && \
     apt-get update && apt-get install -y --no-install-recommends \
     python3 \
+    python3-tk \
+    python3-dev \
     xvfb \
     x11-utils \
     scrot \
