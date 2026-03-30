@@ -96,7 +96,7 @@ RUN echo "Cache bust 2026-03-30-v2" && \
     && rm -rf /var/lib/apt/lists/*
 
 # Build-time verification: fail fast if docker binary is missing
-RUN which docker || (echo "Docker CLI missing!" && exit 1)
+RUN docker --version || (echo "Docker CLI missing!" && exit 1)
 
 # Copy installed packages from builder stage
 COPY --from=builder /install /usr/local
